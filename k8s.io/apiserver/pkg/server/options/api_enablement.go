@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/spf13/pflag"
+	"k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/resourceconfig"
+	serverstore "k8s.io/apiserver/pkg/server/storage"
 	cliflag "k8s.io/component-base/cli/flag"
 )
 
@@ -56,6 +58,17 @@ func (s *APIEnablementOptions) Validate(registries ...GroupRegistry) []error {
 	}
 
 	return errors
+}
+
+func (s *APIEnablementOptions) ApplyTo(c *server.Config, defaultResourceConfig *serverstore.ResourceConfig, registry resourceconfig.GroupVersionRegistry) error {
+	if s == nil {
+		return nil
+	}
+
+	mergedResourceConfig, err := resourceconfig.MergeAPIResourceConfigs(defaultResourceConfig, s.RuntimeConfig, registry)
+	c.MergedResourceConfig = mergedResourceConfig
+
+	return err
 }
 
 func unknownGroups(groups []string, registry GroupRegistry) []string {

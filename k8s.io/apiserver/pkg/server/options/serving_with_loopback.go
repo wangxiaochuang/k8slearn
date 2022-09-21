@@ -2,9 +2,10 @@ package options
 
 import (
 	"fmt"
-	"time"
 
+	"github.com/google/uuid"
 	"k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/server/dynamiccertificates"
 	"k8s.io/client-go/rest"
 	certutil "k8s.io/client-go/util/cert"
 )
@@ -30,13 +31,28 @@ func (s *SecureServingOptionsWithLoopback) ApplyTo(secureServingInfo **server.Se
 		return nil
 	}
 
-	// 为本地调用的连接创建自签名证书
+	// 为本地调用的连接创建自签名证书，只产生，没有落盘
 	certPem, keyPem, err := certutil.GenerateSelfSignedCertKey(server.LoopbackClientServerNameOverride, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to generate self-signed certificate for loopback connection: %v", err)
 	}
+	certProvider, err := dynamiccertificates.NewStaticSNICertKeyContent("self-signed loopback", certPem, keyPem, server.LoopbackClientServerNameOverride)
+	if err != nil {
+		return fmt.Errorf("failed to generate self-signed certificate for loopback connection: %v", err)
+	}
 
-	time.Sleep(time.Hour)
+	(*secureServingInfo).SNICerts = append([]dynamiccertificates.SNICertKeyContentProvider{certProvider}, (*secureServingInfo).SNICerts...)
 
-	panic("not implemented")
+	secureLoopbackClientConfig, err := (*secureServingInfo).NewLoopbackClientConfig(uuid.New().String(), certPem)
+	switch {
+	case err != nil && *loopbackClientConfig == nil:
+		(*secureServingInfo).SNICerts = (*secureServingInfo).SNICerts[1:]
+		return err
+	case err != nil && *loopbackClientConfig != nil:
+
+	default:
+		*loopbackClientConfig = secureLoopbackClientConfig
+	}
+
+	return nil
 }

@@ -297,6 +297,16 @@ func buildGenericConfig(
 	if lastErr = s.SecureServing.ApplyTo(&genericConfig.SecureServing, &genericConfig.LoopbackClientConfig); lastErr != nil {
 		return
 	}
+	if lastErr = s.Features.ApplyTo(genericConfig); lastErr != nil {
+		return
+	}
+
+	if lastErr = s.APIEnablement.ApplyTo(genericConfig, controlplane.DefaultAPIResourceConfigSource(), legacyscheme.Scheme); lastErr != nil {
+		return
+	}
+	if lastErr = s.EgressSelector.ApplyTo(genericConfig); lastErr != nil {
+		return
+	}
 
 	time.Sleep(time.Minute)
 	panic("not implemented")

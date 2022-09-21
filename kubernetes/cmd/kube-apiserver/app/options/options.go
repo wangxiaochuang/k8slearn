@@ -17,9 +17,11 @@ type ServerRunOptions struct {
 	GenericServerRunOptions *genericoptions.ServerRunOptions
 	Etcd                    *genericoptions.EtcdOptions
 	SecureServing           *genericoptions.SecureServingOptionsWithLoopback
+	Features                *genericoptions.FeatureOptions
 	Authentication          *kubeoptions.BuiltInAuthenticationOptions
 	Authorization           *kubeoptions.BuiltInAuthorizationOptions
 	APIEnablement           *genericoptions.APIEnablementOptions
+	EgressSelector          *genericoptions.EgressSelectorOptions
 
 	Logs                      *logs.Options
 	EventTTL                  time.Duration
@@ -43,9 +45,11 @@ func NewServerRunOptions() *ServerRunOptions {
 		GenericServerRunOptions: genericoptions.NewServerRunOptions(),
 		Etcd:                    genericoptions.NewEtcdOptions(storagebackend.NewDefaultConfig(kubeoptions.DefaultEtcdPathPrefix, nil)),
 		SecureServing:           kubeoptions.NewSecureServingOptions(),
+		Features:                genericoptions.NewFeatureOptions(),
 		Authentication:          kubeoptions.NewBuiltInAuthenticationOptions().WithAll(),
 		Authorization:           kubeoptions.NewBuiltInAuthorizationOptions(),
 		APIEnablement:           genericoptions.NewAPIEnablementOptions(),
+		EgressSelector:          genericoptions.NewEgressSelectorOptions(),
 		Logs:                    logs.NewOptions(),
 		EventTTL:                1 * time.Hour,
 		MasterCount:             1,
@@ -61,9 +65,11 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 	s.GenericServerRunOptions.AddUniversalFlags(fss.FlagSet("generic"))
 	s.Etcd.AddFlags(fss.FlagSet("etcd"))
 	s.SecureServing.AddFlags(fss.FlagSet("secure serving"))
+	s.Features.AddFlags(fss.FlagSet("features"))
 	s.Authentication.AddFlags(fss.FlagSet("authentication"))
 	s.Authorization.AddFlags(fss.FlagSet("authorization"))
 	s.APIEnablement.AddFlags(fss.FlagSet("API enablement"))
+	s.EgressSelector.AddFlags(fss.FlagSet("egress selector"))
 
 	// --log-flush-frequency --log-json-info-buffer-size --log-json-split-stream --logging-format -v --vmodule
 	s.Logs.AddFlags(fss.FlagSet("logs"))
