@@ -67,9 +67,11 @@ func (s *Scheme) AddKnownTypes(gv schema.GroupVersion, types ...Object) {
 	s.addObservedVersion(gv)
 	for _, obj := range types {
 		t := reflect.TypeOf(obj)
+		// 必须是指针
 		if t.Kind() != reflect.Ptr {
 			panic("All types must be pointers to structs.")
 		}
+		// 拿到元素
 		t = t.Elem()
 		s.AddKnownTypeWithName(gv.WithKind(t.Name()), obj)
 	}
@@ -85,6 +87,7 @@ func (s *Scheme) AddKnownTypeWithName(gvk schema.GroupVersionKind, obj Object) {
 		panic("All types must be pointers to structs.")
 	}
 	t = t.Elem()
+	// 必须是结构体
 	if t.Kind() != reflect.Struct {
 		panic("All types must be pointers to structs.")
 	}
@@ -92,6 +95,7 @@ func (s *Scheme) AddKnownTypeWithName(gvk schema.GroupVersionKind, obj Object) {
 	if oldT, found := s.gvkToType[gvk]; found && oldT != t {
 		panic(fmt.Sprintf("Double registration of different types for %v: old=%v.%v, new=%v.%v in scheme %q", gvk, oldT.PkgPath(), oldT.Name(), t.PkgPath(), t.Name(), s.schemeName))
 	}
+	// 一个确定gvk只能转固定的内部类型
 	s.gvkToType[gvk] = t
 
 	for _, existingGvk := range s.typeToGVK[t] {
@@ -99,13 +103,17 @@ func (s *Scheme) AddKnownTypeWithName(gvk schema.GroupVersionKind, obj Object) {
 			return
 		}
 	}
+	// 一个类型是内部类型，是可以转不同的外部类型的，所以是数组
 	s.typeToGVK[t] = append(s.typeToGVK[t], gvk)
 
+	// 只能有一个输入参数没有输出参数，且输入参数必须是与obj相同的
 	if m := reflect.ValueOf(obj).MethodByName("DeepCopyInto"); m.IsValid() && m.Type().NumIn() == 1 && m.Type().NumOut() == 0 && m.Type().In(0) == reflect.TypeOf(obj) {
 		if err := s.AddGeneratedConversionFunc(obj, obj, func(a, b interface{}, scope conversion.Scope) error {
 			// copy a to b
 			reflect.ValueOf(a).MethodByName("DeepCopyInto").Call([]reflect.Value{reflect.ValueOf(b)})
-			// clear TypeMeta to match legacy reflective conversion
+			// Object对应的结构体都有TypeMeta字段，GetObjectKind会返回其内嵌的TypeMeta成员
+			// 调用其SetGroupVersionKind会设置TypeMeta的APIVersion和Kind字段
+			// APVersion为 GROUP/VERSION; Kind为 KIND
 			b.(Object).GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{})
 			return nil
 		}); err != nil {
@@ -444,6 +452,7 @@ func (s *Scheme) SetVersionPriority(versions ...schema.GroupVersion) error {
 		return fmt.Errorf("must register versions for exactly one group: %v", strings.Join(groups.List(), ", "))
 	}
 
+	// 期望的是穿甲的version的group都是一样，所以取第一个就行
 	s.versionPriority[groups.List()[0]] = order
 	return nil
 }
