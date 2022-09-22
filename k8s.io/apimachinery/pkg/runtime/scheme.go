@@ -460,7 +460,7 @@ func (s *Scheme) SetVersionPriority(versions ...schema.GroupVersion) error {
 		return fmt.Errorf("must register versions for exactly one group: %v", strings.Join(groups.List(), ", "))
 	}
 
-	// 期望的是穿甲的version的group都是一样，所以取第一个就行
+	// 期望的是传递的version的group都是一样，所以取第一个就行
 	s.versionPriority[groups.List()[0]] = order
 	return nil
 }

@@ -31,6 +31,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(ConfigSchemeGroupVersion,
 		&TracingConfiguration{},
 	)
+	// 非常基础的类型间的转换
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	metav1.AddToGroupVersion(scheme, ConfigSchemeGroupVersion)
 	return nil

@@ -45,6 +45,7 @@ func AddToGroupVersion(scheme *runtime.Scheme, groupVersion schema.GroupVersion)
 	)
 	// 里面还是调用 AddKnownTypeWithName
 	scheme.AddKnownTypes(groupVersion, optionsTypes...)
+	// 没有group，只有version
 	scheme.AddUnversionedTypes(Unversioned,
 		&Status{},
 		&APIVersions{},
@@ -52,6 +53,7 @@ func AddToGroupVersion(scheme *runtime.Scheme, groupVersion schema.GroupVersion)
 		&APIGroup{},
 		&APIResourceList{},
 	)
+	// 非常基础的类型间的转换
 	utilruntime.Must(RegisterConversions(scheme))
 	utilruntime.Must(RegisterDefaults(scheme))
 }
