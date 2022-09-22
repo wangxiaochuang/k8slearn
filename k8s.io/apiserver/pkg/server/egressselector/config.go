@@ -3,13 +3,16 @@ package egressselector
 import (
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/apiserver/pkg/apis/apiserver"
 	"k8s.io/apiserver/pkg/apis/apiserver/install"
 	"k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/utils/path"
 )
 
 var cfgScheme = runtime.NewScheme()
@@ -39,9 +42,185 @@ func ReadEgressSelectorConfiguration(configFilePath string) (*apiserver.EgressSe
 		return nil, fmt.Errorf("invalid service configuration object %q", decodedConfig.Kind)
 	}
 	internalConfig := &apiserver.EgressSelectorConfiguration{}
+	// 外部版本转换为内部版本
 	if err := cfgScheme.Convert(&decodedConfig, internalConfig, nil); err != nil {
 		// we got an error where the decode wasn't related to a missing type
 		return nil, err
 	}
 	return internalConfig, nil
+}
+
+func ValidateEgressSelectorConfiguration(config *apiserver.EgressSelectorConfiguration) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if config == nil {
+		return allErrs // Treating a nil configuration as valid
+	}
+	for _, service := range config.EgressSelections {
+		fldPath := field.NewPath("service", "connection")
+		switch service.Connection.ProxyProtocol {
+		case apiserver.ProtocolDirect:
+			allErrs = append(allErrs, validateDirectConnection(service.Connection, fldPath)...)
+		case apiserver.ProtocolHTTPConnect:
+			allErrs = append(allErrs, validateHTTPConnectTransport(service.Connection.Transport, fldPath)...)
+		case apiserver.ProtocolGRPC:
+			allErrs = append(allErrs, validateGRPCTransport(service.Connection.Transport, fldPath)...)
+		default:
+			allErrs = append(allErrs, field.NotSupported(
+				fldPath.Child("protocol"),
+				service.Connection.ProxyProtocol,
+				[]string{
+					string(apiserver.ProtocolDirect),
+					string(apiserver.ProtocolHTTPConnect),
+					string(apiserver.ProtocolGRPC),
+				}))
+		}
+	}
+
+	seen := sets.String{}
+	for i, service := range config.EgressSelections {
+		canonicalName := strings.ToLower(service.Name)
+		fldPath := field.NewPath("service", "connection")
+		if seen.Has(canonicalName) {
+			allErrs = append(allErrs, field.Duplicate(fldPath.Index(i), canonicalName))
+			continue
+		}
+		seen.Insert(canonicalName)
+
+		if !validEgressSelectorNames.Has(canonicalName) {
+			allErrs = append(allErrs, field.NotSupported(fldPath, canonicalName, validEgressSelectorNames.List()))
+			continue
+		}
+	}
+	return allErrs
+}
+
+func validateHTTPConnectTransport(transport *apiserver.Transport, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if transport == nil {
+		allErrs = append(allErrs, field.Required(
+			fldPath.Child("transport"),
+			"transport must be set for HTTPConnect"))
+		return allErrs
+	}
+
+	if transport.TCP != nil && transport.UDS != nil {
+		allErrs = append(allErrs, field.Invalid(
+			fldPath.Child("tcp"),
+			transport.TCP,
+			"TCP and UDS cannot both be set"))
+	} else if transport.TCP == nil && transport.UDS == nil {
+		allErrs = append(allErrs, field.Required(
+			fldPath.Child("tcp"),
+			"One of TCP or UDS must be set"))
+	} else if transport.TCP != nil {
+		allErrs = append(allErrs, validateTCPConnection(transport.TCP, fldPath)...)
+	} else if transport.UDS != nil {
+		allErrs = append(allErrs, validateUDSConnection(transport.UDS, fldPath)...)
+	}
+	return allErrs
+}
+
+func validateGRPCTransport(transport *apiserver.Transport, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if transport == nil {
+		allErrs = append(allErrs, field.Required(
+			fldPath.Child("transport"),
+			"transport must be set for GRPC"))
+		return allErrs
+	}
+
+	if transport.UDS != nil {
+		allErrs = append(allErrs, validateUDSConnection(transport.UDS, fldPath)...)
+	} else {
+		allErrs = append(allErrs, field.Required(
+			fldPath.Child("uds"),
+			"UDS must be set with GRPC"))
+	}
+	return allErrs
+}
+
+func validateDirectConnection(connection apiserver.Connection, fldPath *field.Path) field.ErrorList {
+	if connection.Transport != nil {
+		return field.ErrorList{field.Invalid(
+			fldPath.Child("transport"),
+			"direct",
+			"Transport config should be absent for direct connect"),
+		}
+	}
+
+	return nil
+}
+
+func validateUDSConnection(udsConfig *apiserver.UDSTransport, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if udsConfig.UDSName == "" {
+		allErrs = append(allErrs, field.Invalid(
+			fldPath.Child("udsName"),
+			"nil",
+			"UDSName should be present for UDS connections"))
+	}
+	return allErrs
+}
+
+func validateTCPConnection(tcpConfig *apiserver.TCPTransport, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if strings.HasPrefix(tcpConfig.URL, "http://") {
+		if tcpConfig.TLSConfig != nil {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("tlsConfig"),
+				"nil",
+				"TLSConfig config should not be present when using HTTP"))
+		}
+	} else if strings.HasPrefix(tcpConfig.URL, "https://") {
+		return validateTLSConfig(tcpConfig.TLSConfig, fldPath)
+	} else {
+		allErrs = append(allErrs, field.Invalid(
+			fldPath.Child("url"),
+			tcpConfig.URL,
+			"supported connection protocols are http:// and https://"))
+	}
+	return allErrs
+}
+
+func validateTLSConfig(tlsConfig *apiserver.TLSConfig, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if tlsConfig == nil {
+		allErrs = append(allErrs, field.Required(
+			fldPath.Child("tlsConfig"),
+			"TLSConfig must be present when using HTTPS"))
+		return allErrs
+	}
+	if tlsConfig.CABundle != "" {
+		if exists, err := path.Exists(path.CheckFollowSymlink, tlsConfig.CABundle); !exists || err != nil {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("tlsConfig", "caBundle"),
+				tlsConfig.CABundle,
+				"TLS config ca bundle does not exist"))
+		}
+	}
+	if tlsConfig.ClientCert == "" {
+		allErrs = append(allErrs, field.Invalid(
+			fldPath.Child("tlsConfig", "clientCert"),
+			"nil",
+			"Using TLS requires clientCert"))
+	} else if exists, err := path.Exists(path.CheckFollowSymlink, tlsConfig.ClientCert); !exists || err != nil {
+		allErrs = append(allErrs, field.Invalid(
+			fldPath.Child("tlsConfig", "clientCert"),
+			tlsConfig.ClientCert,
+			"TLS client cert does not exist"))
+	}
+	if tlsConfig.ClientKey == "" {
+		allErrs = append(allErrs, field.Invalid(
+			fldPath.Child("tlsConfig", "clientKey"),
+			"nil",
+			"Using TLS requires requires clientKey"))
+	} else if exists, err := path.Exists(path.CheckFollowSymlink, tlsConfig.ClientKey); !exists || err != nil {
+		allErrs = append(allErrs, field.Invalid(
+			fldPath.Child("tlsConfig", "clientKey"),
+			tlsConfig.ClientKey,
+			"TLS client key does not exist"))
+	}
+	return allErrs
 }

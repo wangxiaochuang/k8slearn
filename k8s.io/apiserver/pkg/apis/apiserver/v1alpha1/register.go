@@ -1,4 +1,4 @@
-package v1
+package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -6,13 +6,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-const GroupName = "apiserver.config.k8s.io"
+const GroupName = "apiserver.k8s.io"
+const ConfigGroupName = "apiserver.config.k8s.io"
 
-// 外部版本，这里v1版本的注册，所以直接指定
-var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}
+var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
+
+var ConfigSchemeGroupVersion = schema.GroupVersion{Group: ConfigGroupName, Version: "v1alpha1"}
 
 var (
-	// Builder可以New也可以直接使用，是一个函数切片，New可以指定初始的函数，直接使用需要Register
 	SchemeBuilder      runtime.SchemeBuilder
 	localSchemeBuilder = &SchemeBuilder
 	AddToScheme        = localSchemeBuilder.AddToScheme
@@ -25,8 +26,12 @@ func init() {
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&AdmissionConfiguration{},
+		&EgressSelectorConfiguration{},
 	)
-	// 添加公共的东西
+	scheme.AddKnownTypes(ConfigSchemeGroupVersion,
+		&TracingConfiguration{},
+	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
+	metav1.AddToGroupVersion(scheme, ConfigSchemeGroupVersion)
 	return nil
 }

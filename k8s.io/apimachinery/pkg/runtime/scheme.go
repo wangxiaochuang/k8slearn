@@ -64,6 +64,7 @@ func (s *Scheme) AddUnversionedTypes(version schema.GroupVersion, types ...Objec
 }
 
 func (s *Scheme) AddKnownTypes(gv schema.GroupVersion, types ...Object) {
+	// 所有内部版本不会都不会记录
 	s.addObservedVersion(gv)
 	for _, obj := range types {
 		t := reflect.TypeOf(obj)
@@ -96,18 +97,25 @@ func (s *Scheme) AddKnownTypeWithName(gvk schema.GroupVersionKind, obj Object) {
 		panic(fmt.Sprintf("Double registration of different types for %v: old=%v.%v, new=%v.%v in scheme %q", gvk, oldT.PkgPath(), oldT.Name(), t.PkgPath(), t.Name(), s.schemeName))
 	}
 	// 一个确定gvk只能转固定的内部类型
+	// 素有版本的组和Kind都会转到一个go类型
+	// apiserver.k8s.io/__internal/AdmissionConfiguration => AdmissionConfiguration
+	// apiserver.config.k8s.io/v1/CreateOptions => CreateOptions
 	s.gvkToType[gvk] = t
 
+	// 类型转GVK，不要重复注册
 	for _, existingGvk := range s.typeToGVK[t] {
 		if existingGvk == gvk {
 			return
 		}
 	}
 	// 一个类型是内部类型，是可以转不同的外部类型的，所以是数组
+	// AdmissionConfiguration => apiserver.k8s.io/__internal/AdmissionConfiguration
+	// CreateOptions => apiserver.config.k8s.io/v1/CreateOptions
 	s.typeToGVK[t] = append(s.typeToGVK[t], gvk)
 
 	// 只能有一个输入参数没有输出参数，且输入参数必须是与obj相同的
 	if m := reflect.ValueOf(obj).MethodByName("DeepCopyInto"); m.IsValid() && m.Type().NumIn() == 1 && m.Type().NumOut() == 0 && m.Type().In(0) == reflect.TypeOf(obj) {
+		// 这里添加默认值
 		if err := s.AddGeneratedConversionFunc(obj, obj, func(a, b interface{}, scope conversion.Scope) error {
 			// copy a to b
 			reflect.ValueOf(a).MethodByName("DeepCopyInto").Call([]reflect.Value{reflect.ValueOf(b)})
@@ -546,7 +554,7 @@ func (s *Scheme) IsVersionRegistered(version schema.GroupVersion) bool {
 	return false
 }
 
-// p689
+// p689 把已经注册的GV放到数组里
 func (s *Scheme) addObservedVersion(version schema.GroupVersion) {
 	if len(version.Version) == 0 || version.Version == APIVersionInternal {
 		return

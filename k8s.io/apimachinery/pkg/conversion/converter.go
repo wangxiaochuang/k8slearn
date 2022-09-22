@@ -80,6 +80,7 @@ func (c ConversionFuncs) AddUntyped(a, b interface{}, fn ConversionFunc) error {
 	if tB.Kind() != reflect.Ptr {
 		return fmt.Errorf("the type %T must be a pointer to register as an untyped conversion", b)
 	}
+	// fmt.Printf("xxxxxx [%s] [%s]\n", tA.Elem(), tB.Elem())
 	c.untyped[typePair{tA, tB}] = fn
 	return nil
 }

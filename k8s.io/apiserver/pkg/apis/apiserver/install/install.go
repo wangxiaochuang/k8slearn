@@ -5,8 +5,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/apis/apiserver"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
-	"k8s.io/client-go/pkg/apis/clientauthentication/v1alpha1"
-	"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1"
+	"k8s.io/apiserver/pkg/apis/apiserver/v1alpha1"
+	"k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 )
 
 // Install registers the API group and adds types to a scheme

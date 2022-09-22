@@ -37,18 +37,20 @@ var optionsTypes = []runtime.Object{
 }
 
 func AddToGroupVersion(scheme *runtime.Scheme, groupVersion schema.GroupVersion) {
+	// 添加公共的Kind
 	scheme.AddKnownTypeWithName(groupVersion.WithKind(WatchEventKind), &WatchEvent{})
 	scheme.AddKnownTypeWithName(
 		schema.GroupVersion{Group: groupVersion.Group, Version: runtime.APIVersionInternal}.WithKind(WatchEventKind),
 		&InternalEvent{},
-		scheme.AddKnownTypes(groupVersion, optionsTypes...),
-		scheme.AddUnversionedTypes(Unversioned,
-			&Status{},
-			&APIVersions{},
-			&APIGroupList{},
-			&APIGroup{},
-			&APIResourceList{},
-		),
+	)
+	// 里面还是调用 AddKnownTypeWithName
+	scheme.AddKnownTypes(groupVersion, optionsTypes...)
+	scheme.AddUnversionedTypes(Unversioned,
+		&Status{},
+		&APIVersions{},
+		&APIGroupList{},
+		&APIGroup{},
+		&APIResourceList{},
 	)
 	utilruntime.Must(RegisterConversions(scheme))
 	utilruntime.Must(RegisterDefaults(scheme))

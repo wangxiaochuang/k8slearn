@@ -306,6 +306,7 @@ func buildGenericConfig(
 		return
 	}
 	if lastErr = s.EgressSelector.ApplyTo(genericConfig); lastErr != nil {
+		time.Sleep(time.Minute)
 		return
 	}
 
