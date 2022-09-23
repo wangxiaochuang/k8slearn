@@ -106,20 +106,18 @@ func identifier(encodeGV runtime.GroupVersioner, encoder runtime.Encoder) runtim
 	return runtime.Identifier(identifier)
 }
 
-// Decode attempts a decode of the object, then tries to convert it to the internal version. If into is provided and the decoding is
-// successful, the returned runtime.Object will be the value passed as into. Note that this may bypass conversion if you pass an
-// into that matches the serialized version.
+// 这里是外部调用Decode的入口
 func (c *codec) Decode(data []byte, defaultGVK *schema.GroupVersionKind, into runtime.Object) (runtime.Object, *schema.GroupVersionKind, error) {
-	// If the into object is unstructured and expresses an opinion about its group/version,
-	// create a new instance of the type so we always exercise the conversion path (skips short-circuiting on `into == obj`)
 	decodeInto := into
 	if into != nil {
+		// 判断是不是 Unstructured类型
 		if _, ok := into.(runtime.Unstructured); ok && !into.GetObjectKind().GroupVersionKind().GroupVersion().Empty() {
 			decodeInto = reflect.New(reflect.TypeOf(into).Elem()).Interface().(runtime.Object)
 		}
 	}
 
 	var strictDecodingErrs []error
+	// decoder就是 universal=recognizer.NewDecoder(decoders...)
 	obj, gvk, err := c.decoder.Decode(data, defaultGVK, decodeInto)
 	if err != nil {
 		if strictErr, ok := runtime.AsStrictDecodingError(err); obj != nil && ok {

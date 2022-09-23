@@ -16,6 +16,7 @@ import (
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/admission"
+	genericfeatures "k8s.io/apiserver/pkg/features"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	serveroptions "k8s.io/apiserver/pkg/server/options"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
@@ -302,12 +303,21 @@ func buildGenericConfig(
 		return
 	}
 
+	// @todo controlplane.DefaultAPIResourceConfigSource()
+	// 记录了什么资源、版本是允许的
 	if lastErr = s.APIEnablement.ApplyTo(genericConfig, controlplane.DefaultAPIResourceConfigSource(), legacyscheme.Scheme); lastErr != nil {
 		return
 	}
 	if lastErr = s.EgressSelector.ApplyTo(genericConfig); lastErr != nil {
-		time.Sleep(time.Minute)
 		return
+	}
+
+	// s.Flags() 里面会添加Flags
+	// --feature-gates="APIServerTracing=true"
+	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIServerTracing) {
+		if lastErr = s.Traces.ApplyTo(genericConfig.EgressSelector, genericConfig); lastErr != nil {
+			return
+		}
 	}
 
 	time.Sleep(time.Minute)

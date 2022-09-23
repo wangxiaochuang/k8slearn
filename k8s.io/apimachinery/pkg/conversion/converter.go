@@ -141,12 +141,15 @@ func (c *Converter) Convert(src, dest interface{}, meta *Meta) error {
 		meta:      meta,
 	}
 
+	// 如果被忽略了，就啥也不做
 	if _, ok := c.ignoredUntypedConversions[pair]; ok {
 		return nil
 	}
+	// 先调用转换函数
 	if fn, ok := c.conversionFuncs.untyped[pair]; ok {
 		return fn(src, dest, scope)
 	}
+	// 没有就调用生成的转换函数
 	if fn, ok := c.generatedConversionFuncs.untyped[pair]; ok {
 		return fn(src, dest, scope)
 	}

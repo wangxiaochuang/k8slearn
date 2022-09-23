@@ -9,13 +9,6 @@ import (
 
 type RecognizingDecoder interface {
 	runtime.Decoder
-	// RecognizesData should return true if the input provided in the provided reader
-	// belongs to this decoder, or an error if the data could not be read or is ambiguous.
-	// Unknown is true if the data could not be determined to match the decoder type.
-	// Decoders should assume that they can read as much of peek as they need (as the caller
-	// provides) and may return unknown if the data provided is not sufficient to make a
-	// a determination. When peek returns EOF that may mean the end of the input or the
-	// end of buffered input - recognizers should return the best guess at that time.
 	RecognizesData(peek []byte) (ok, unknown bool, err error)
 }
 
@@ -67,7 +60,7 @@ func (d *decoder) Decode(data []byte, gvk *schema.GroupVersionKind, into runtime
 		skipped []runtime.Decoder
 	)
 
-	// try recognizers, record any decoders we need to give a chance later
+	// 尝试使用每个编码器进行解码
 	for _, r := range d.decoders {
 		switch t := r.(type) {
 		case RecognizingDecoder:
@@ -76,20 +69,23 @@ func (d *decoder) Decode(data []byte, gvk *schema.GroupVersionKind, into runtime
 				lastErr = err
 				continue
 			}
+			// 如果是未知的就放数组里，后面可能都去尝试一下
 			if unknown {
 				skipped = append(skipped, t)
 				continue
 			}
+			// 明确不知道的，直接继续下一个
 			if !ok {
 				continue
 			}
+			// 这是识别到了是什么类型，直接Decode即可
 			return r.Decode(data, gvk, into)
 		default:
 			skipped = append(skipped, t)
 		}
 	}
 
-	// try recognizers that returned unknown or didn't recognize their data
+	// 尝试每一个不确定的解码器
 	for _, r := range skipped {
 		out, actual, err := r.Decode(data, gvk, into)
 		if err != nil {

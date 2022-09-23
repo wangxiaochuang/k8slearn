@@ -309,6 +309,7 @@ func (s *Scheme) Convert(in, out interface{}, context interface{}) error {
 		in = typed
 	}
 
+	// 默认情况下返回的就是个空的Meta结构体指针
 	meta := s.generateConvertMeta(in)
 	meta.Context = context
 	return s.converter.Convert(in, out, meta)

@@ -11,6 +11,7 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 )
 
+// 确定什么资源可以开启
 type APIEnablementOptions struct {
 	RuntimeConfig cliflag.ConfigurationMap
 }

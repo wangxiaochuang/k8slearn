@@ -24,6 +24,7 @@ type ServerRunOptions struct {
 	EgressSelector          *genericoptions.EgressSelectorOptions
 
 	Logs                      *logs.Options
+	Traces                    *genericoptions.TracingOptions
 	EventTTL                  time.Duration
 	KubernetesServiceNodePort int
 
@@ -51,6 +52,7 @@ func NewServerRunOptions() *ServerRunOptions {
 		APIEnablement:           genericoptions.NewAPIEnablementOptions(),
 		EgressSelector:          genericoptions.NewEgressSelectorOptions(),
 		Logs:                    logs.NewOptions(),
+		Traces:                  genericoptions.NewTracingOptions(),
 		EventTTL:                1 * time.Hour,
 		MasterCount:             1,
 
@@ -73,6 +75,7 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 
 	// --log-flush-frequency --log-json-info-buffer-size --log-json-split-stream --logging-format -v --vmodule
 	s.Logs.AddFlags(fss.FlagSet("logs"))
+	s.Traces.AddFlags(fss.FlagSet("traces"))
 
 	fs := fss.FlagSet("misc")
 	fs.DurationVar(&s.EventTTL, "event-ttl", s.EventTTL,

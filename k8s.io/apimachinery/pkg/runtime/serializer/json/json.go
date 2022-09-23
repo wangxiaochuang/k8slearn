@@ -83,6 +83,7 @@ func gvkWithDefaults(actual, defaultGVK schema.GroupVersionKind) schema.GroupVer
 func (s *Serializer) Decode(originalData []byte, gvk *schema.GroupVersionKind, into runtime.Object) (runtime.Object, *schema.GroupVersionKind, error) {
 	data := originalData
 	if s.options.Yaml {
+		// 如果YAML配置了，就转为json
 		altered, err := yaml.YAMLToJSON(data)
 		if err != nil {
 			return nil, nil, err
@@ -90,15 +91,18 @@ func (s *Serializer) Decode(originalData []byte, gvk *schema.GroupVersionKind, i
 		data = altered
 	}
 
+	// 识别gvk
 	actual, err := s.meta.Interpret(data)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if gvk != nil {
+		// 如果没识别到就使用默认值
 		*actual = gvkWithDefaults(*actual, *gvk)
 	}
 
+	// 如果是unknown，就设置unknown
 	if unk, ok := into.(*runtime.Unknown); ok && unk != nil {
 		unk.Raw = originalData
 		unk.ContentType = runtime.ContentTypeJSON
@@ -111,6 +115,7 @@ func (s *Serializer) Decode(originalData []byte, gvk *schema.GroupVersionKind, i
 		types, _, err := s.typer.ObjectKinds(into)
 		switch {
 		case runtime.IsNotRegisteredError(err), isUnstructured:
+			// 如果是Unstructured对象
 			strictErrs, err := s.unmarshal(into, data, originalData)
 			if err != nil {
 				return nil, actual, err
@@ -142,11 +147,13 @@ func (s *Serializer) Decode(originalData []byte, gvk *schema.GroupVersionKind, i
 		return nil, actual, runtime.NewMissingVersionErr(string(originalData))
 	}
 
+	// obj有就直接使用，没有就根据gvk创建一个
 	obj, err := runtime.UseOrCreateObject(s.typer, s.creater, *actual, into)
 	if err != nil {
 		return nil, actual, err
 	}
 
+	// 这里将data数组转换为该对象
 	strictErrs, err := s.unmarshal(obj, data, originalData)
 	if err != nil {
 		return nil, actual, err
@@ -221,6 +228,7 @@ func (s *Serializer) unmarshal(into runtime.Object, data, originalData []byte) (
 		strictJSONErrs, err = kjson.UnmarshalStrict(data, &m)
 		u.SetUnstructuredContent(m)
 	} else {
+		// 调用kjson的该方法进行反序列化
 		strictJSONErrs, err = kjson.UnmarshalStrict(data, into)
 	}
 	if err != nil {
