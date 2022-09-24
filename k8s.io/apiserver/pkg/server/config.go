@@ -11,6 +11,7 @@ import (
 	"k8s.io/apiserver/pkg/audit"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/endpoints/discovery"
+	apiopenapi "k8s.io/apiserver/pkg/endpoints/openapi"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/features"
 	genericregistry "k8s.io/apiserver/pkg/registry/generic"
@@ -23,6 +24,7 @@ import (
 	utilflowcontrol "k8s.io/apiserver/pkg/util/flowcontrol"
 	flowcontrolrequest "k8s.io/apiserver/pkg/util/flowcontrol/request"
 	openapicommon "k8s.io/kube-openapi/pkg/common"
+	"k8s.io/kube-openapi/pkg/validation/spec"
 
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -124,6 +126,7 @@ type AuthorizationInfo struct {
 	Authorizer authorizer.Authorizer
 }
 
+// p323
 func NewConfig(codecs serializer.CodecFactory) *Config {
 	defaultHealthChecks := []healthz.HealthChecker{healthz.PingHealthz, healthz.LogHealthz}
 	var id string
@@ -162,6 +165,44 @@ func NewConfig(codecs serializer.CodecFactory) *Config {
 		APIServerID:           id,
 		StorageVersionManager: storageversion.NewDefaultManager(),
 	}
+}
+
+func NewRecommendedConfig(codecs serializer.CodecFactory) *RecommendedConfig {
+	return &RecommendedConfig{
+		Config: *NewConfig(codecs),
+	}
+}
+
+// p388
+func DefaultOpenAPIConfig(getDefinitions openapicommon.GetOpenAPIDefinitions, defNamer *apiopenapi.DefinitionNamer) *openapicommon.Config {
+	return &openapicommon.Config{
+		ProtocolList:   []string{"https"},
+		IgnorePrefixes: []string{},
+		Info: &spec.Info{
+			InfoProps: spec.InfoProps{
+				Title: "Generic API Server",
+			},
+		},
+		DefaultResponse: &spec.Response{
+			ResponseProps: spec.ResponseProps{
+				Description: "Default Response.",
+			},
+		},
+		GetOperationIDAndTags: apiopenapi.GetOperationIDAndTags,
+		GetDefinitionName:     defNamer.GetDefinitionName,
+		GetDefinitions:        getDefinitions,
+	}
+}
+
+// p409
+func DefaultOpenAPIV3Config(getDefinitions openapicommon.GetOpenAPIDefinitions, defNamer *apiopenapi.DefinitionNamer) *openapicommon.Config {
+	defaultConfig := DefaultOpenAPIConfig(getDefinitions, defNamer)
+	defaultConfig.Definitions = getDefinitions(func(name string) spec.Ref {
+		defName, _ := defaultConfig.GetDefinitionName(name)
+		return spec.MustCreateRef("#/components/schemas/" + openapicommon.EscapeJsonPointer(defName))
+	})
+
+	return defaultConfig
 }
 
 // p799

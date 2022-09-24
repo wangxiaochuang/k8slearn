@@ -41,8 +41,8 @@ func (o *TracingOptions) ApplyTo(es *egressselector.EgressSelector, c *server.Co
 	if len(errs) > 0 {
 		return fmt.Errorf("failed to validate tracing configuration: %v", errs.ToAggregate())
 	}
-	fmt.Printf("####### tracing.go+40\n")
-	return nil
+
+	panic("####### tracing.go+40\n")
 }
 
 func (o *TracingOptions) Validate() (errs []error) {
