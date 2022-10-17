@@ -3,6 +3,7 @@ package healthz
 import (
 	"fmt"
 	"net/http"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,4 +54,30 @@ func (l *log) Check(_ *http.Request) error {
 		return nil
 	}
 	return fmt.Errorf("logging blocked")
+}
+
+// p85
+type cacheSyncWaiter interface {
+	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
+}
+
+// p199
+type healthzCheck struct {
+	name  string
+	check func(r *http.Request) error
+}
+
+var _ HealthChecker = &healthzCheck{}
+
+func (c *healthzCheck) Name() string {
+	return c.name
+}
+
+func (c *healthzCheck) Check(r *http.Request) error {
+	return c.check(r)
+}
+
+// p123
+func NamedCheck(name string, check func(r *http.Request) error) HealthChecker {
+	return &healthzCheck{name, check}
 }

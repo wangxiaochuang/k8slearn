@@ -1,10 +1,26 @@
+/*
+Copyright 2021 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package spec3
 
 import (
 	"encoding/json"
-
-	"github.com/go-openapi/swag"
 	"k8s.io/kube-openapi/pkg/validation/spec"
+	"github.com/go-openapi/swag"
+
 )
 
 type Server struct {
@@ -13,11 +29,15 @@ type Server struct {
 }
 
 type ServerProps struct {
-	Description string                     `json:"description,omitempty"`
-	URL         string                     `json:"url"`
-	Variables   map[string]*ServerVariable `json:"variables,omitempty"`
+	// Description is a short description of the target documentation. CommonMark syntax MAY be used for rich text representation.
+	Description string `json:"description,omitempty"`
+	// URL is the URL for the target documentation.
+	URL string `json:"url"`
+	// Variables contains a map between a variable name and its value. The value is used for substitution in the server's URL templeate
+	Variables map[string]*ServerVariable `json:"variables,omitempty"`
 }
 
+// MarshalJSON is a custom marshal function that knows how to encode Responses as JSON
 func (s *Server) MarshalJSON() ([]byte, error) {
 	b1, err := json.Marshal(s.ServerProps)
 	if err != nil {
@@ -46,11 +66,15 @@ type ServerVariable struct {
 }
 
 type ServerVariableProps struct {
-	Enum        []string `json:"enum,omitempty"`
-	Default     string   `json:"default"`
-	Description string   `json:"description,omitempty"`
+	// Enum is an enumeration of string values to be used if the substitution options are from a limited set
+	Enum []string `json:"enum,omitempty"`
+	// Default is the default value to use for substitution, which SHALL be sent if an alternate value is not supplied
+	Default string `json:"default"`
+	// Description is a description for the server variable
+	Description string `json:"description,omitempty"`
 }
 
+// MarshalJSON is a custom marshal function that knows how to encode Responses as JSON
 func (s *ServerVariable) MarshalJSON() ([]byte, error) {
 	b1, err := json.Marshal(s.ServerVariableProps)
 	if err != nil {

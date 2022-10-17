@@ -2,13 +2,22 @@ package options
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"k8s.io/apiserver/pkg/registry/generic"
+	genericregistry "k8s.io/apiserver/pkg/registry/generic/registry"
+	storagefactory "k8s.io/apiserver/pkg/storage/storagebackend/factory"
+	"k8s.io/klog/v2"
+
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/server/healthz"
+	serverstorage "k8s.io/apiserver/pkg/server/storage"
 	"k8s.io/apiserver/pkg/storage/storagebackend"
 )
 
@@ -146,6 +155,75 @@ func (s *EtcdOptions) AddFlags(fs *pflag.FlagSet) {
 
 	fs.Int64Var(&s.StorageConfig.LeaseManagerConfig.ReuseDurationSeconds, "lease-reuse-duration-seconds", s.StorageConfig.LeaseManagerConfig.ReuseDurationSeconds,
 		"The time in seconds that each lease is reused. A lower value could avoid large number of objects reusing the same lease. Notice that a too small value may cause performance problems at storage layer.")
+}
+
+// p211
+func (s *EtcdOptions) ApplyWithStorageFactoryTo(factory serverstorage.StorageFactory, c *server.Config) error {
+	if err := s.addEtcdHealthEndpoint(c); err != nil {
+		return err
+	}
+
+	// use the StorageObjectCountTracker interface instance from server.Config
+	s.StorageConfig.StorageObjectCountTracker = c.StorageObjectCountTracker
+
+	c.RESTOptionsGetter = &StorageFactoryRestOptionsFactory{Options: *s, StorageFactory: factory}
+	return nil
+}
+
+func (s *EtcdOptions) addEtcdHealthEndpoint(c *server.Config) error {
+	healthCheck, err := storagefactory.CreateHealthCheck(s.StorageConfig)
+	if err != nil {
+		return err
+	}
+	c.AddHealthChecks(healthz.NamedCheck("etcd", func(r *http.Request) error {
+		return healthCheck()
+	}))
+
+	if s.EncryptionProviderConfigFilepath != "" {
+		panic("not implemented")
+	}
+
+	return nil
+}
+
+// p281
+type StorageFactoryRestOptionsFactory struct {
+	Options        EtcdOptions
+	StorageFactory serverstorage.StorageFactory
+}
+
+func (f *StorageFactoryRestOptionsFactory) GetRESTOptions(resource schema.GroupResource) (generic.RESTOptions, error) {
+	storageConfig, err := f.StorageFactory.NewConfig(resource)
+	if err != nil {
+		return generic.RESTOptions{}, fmt.Errorf("unable to find storage destination for %v, due to %v", resource, err.Error())
+	}
+	ret := generic.RESTOptions{
+		StorageConfig:             storageConfig,
+		Decorator:                 generic.UndecoratedStorage,
+		DeleteCollectionWorkers:   f.Options.DeleteCollectionWorkers,
+		EnableGarbageCollection:   f.Options.EnableGarbageCollection,
+		ResourcePrefix:            f.StorageFactory.ResourcePrefix(resource),
+		CountMetricPollPeriod:     f.Options.StorageConfig.CountMetricPollPeriod,
+		StorageObjectCountTracker: f.Options.StorageConfig.StorageObjectCountTracker,
+	}
+
+	if f.Options.EnableWatchCache {
+		sizes, err := ParseWatchCacheSizes(f.Options.WatchCacheSizes)
+		if err != nil {
+			return generic.RESTOptions{}, err
+		}
+		size, ok := sizes[resource]
+		if ok && size > 0 {
+			klog.Warningf("Dropping watch-cache-size for %v - watchCache size is now dynamic", resource)
+		}
+		if ok && size <= 0 {
+			ret.Decorator = generic.UndecoratedStorage
+		} else {
+			ret.Decorator = genericregistry.StorageWithCacher()
+		}
+	}
+
+	return ret, nil
 }
 
 // p322

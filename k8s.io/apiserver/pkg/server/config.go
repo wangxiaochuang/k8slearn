@@ -205,6 +205,15 @@ func DefaultOpenAPIV3Config(getDefinitions openapicommon.GetOpenAPIDefinitions, 
 	return defaultConfig
 }
 
+// p454
+func (c *Config) AddHealthChecks(healthChecks ...healthz.HealthChecker) {
+	for _, check := range healthChecks {
+		c.HealthzChecks = append(c.HealthzChecks, check)
+		c.LivezChecks = append(c.LivezChecks, check)
+		c.ReadyzChecks = append(c.ReadyzChecks, check)
+	}
+}
+
 // p799
 func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 	panic("xxxxxx")

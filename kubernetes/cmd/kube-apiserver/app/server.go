@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	clientgoclientset "k8s.io/client-go/kubernetes"
 	aggregatorscheme "k8s.io/kube-aggregator/pkg/apiserver/scheme"
 
 	extensionsapiserver "k8s.io/apiextensions-apiserver/pkg/apiserver"
@@ -351,8 +352,38 @@ func buildGenericConfig(
 	kubeVersion := version.Get()
 	genericConfig.Version = &kubeVersion
 
-	kubeapiserver.NewStorageFactoryConfig()
+	storageFactoryConfig := kubeapiserver.NewStorageFactoryConfig()
+	storageFactoryConfig.APIResourceConfig = genericConfig.MergedResourceConfig
 
+	completedStorageFactoryConfig, err := storageFactoryConfig.Complete(s.Etcd)
+	if err != nil {
+		lastErr = err
+		return
+	}
+	storageFactory, lastErr = completedStorageFactoryConfig.New()
+	if lastErr != nil {
+		return
+	}
+	if genericConfig.EgressSelector != nil {
+		storageFactory.StorageConfig.Transport.EgressLookup = genericConfig.EgressSelector.Lookup
+	}
+	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIServerTracing) && genericConfig.TracerProvider != nil {
+		storageFactory.StorageConfig.Transport.TracerProvider = genericConfig.TracerProvider
+	}
+	if lastErr = s.Etcd.ApplyWithStorageFactoryTo(storageFactory, genericConfig); lastErr != nil {
+		return
+	}
+
+	genericConfig.LoopbackClientConfig.ContentConfig.ContentType = "application/vnd.kubernetes.protobuf"
+
+	genericConfig.LoopbackClientConfig.DisableCompression = true
+
+	kubeClientConfig := genericConfig.LoopbackClientConfig
+	_, err = clientgoclientset.NewForConfig(kubeClientConfig)
+	if err != nil {
+		lastErr = fmt.Errorf("failed to create real external clientset: %v", err)
+		return
+	}
 	time.Sleep(time.Minute)
 	panic("not implemented")
 }

@@ -66,6 +66,7 @@ func (sanitizedAuthConfigPersister) String() string {
 	return "rest.AuthProviderConfigPersister(--- REDACTED ---)"
 }
 
+// p163
 type sanitizedObject struct{ runtime.Object }
 
 func (sanitizedObject) GoString() string {
@@ -149,6 +150,7 @@ func (c TLSClientConfig) String() string {
 	return fmt.Sprintf("%#v", cc)
 }
 
+// p283
 type ContentConfig struct {
 	AcceptContentTypes   string
 	ContentType          string
@@ -156,6 +158,22 @@ type ContentConfig struct {
 	NegotiatedSerializer runtime.NegotiatedSerializer
 }
 
+// p339
+func RESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RESTClient, error) {
+	panic("not implemented")
+}
+
+// p409
+func UnversionedRESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RESTClient, error) {
+	panic("not implemented")
+}
+
+// p499
+func DefaultKubernetesUserAgent() string {
+	panic("not implemented")
+}
+
+// p630
 func CopyConfig(config *Config) *Config {
 	c := &Config{
 		Host:            config.Host,
