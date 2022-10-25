@@ -3,6 +3,7 @@ package wait
 import (
 	"context"
 	"errors"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -201,6 +202,43 @@ type exponentialBackoffManagerImpl struct {
 }
 
 // p331
+func NewExponentialBackoffManager(initBackoff, maxBackoff, resetDuration time.Duration, backoffFactor, jitter float64, c clock.Clock) BackoffManager {
+	return &exponentialBackoffManagerImpl{
+		backoff: &Backoff{
+			Duration: initBackoff,
+			Factor:   backoffFactor,
+			Jitter:   jitter,
+
+			// the current impl of wait.Backoff returns Backoff.Duration once steps are used up, which is not
+			// what we ideally need here, we set it to max int and assume we will never use up the steps
+			Steps: math.MaxInt32,
+			Cap:   maxBackoff,
+		},
+		backoffTimer:         nil,
+		initialBackoff:       initBackoff,
+		lastBackoffStart:     c.Now(),
+		backoffResetDuration: resetDuration,
+		clock:                c,
+	}
+}
+
+func (b *exponentialBackoffManagerImpl) getNextBackoff() time.Duration {
+	if b.clock.Now().Sub(b.lastBackoffStart) > b.backoffResetDuration {
+		b.backoff.Steps = math.MaxInt32
+		b.backoff.Duration = b.initialBackoff
+	}
+	b.lastBackoffStart = b.clock.Now()
+	return b.backoff.Step()
+}
+
+func (b *exponentialBackoffManagerImpl) Backoff() clock.Timer {
+	if b.backoffTimer == nil {
+		b.backoffTimer = b.clock.NewTimer(b.getNextBackoff())
+	} else {
+		b.backoffTimer.Reset(b.getNextBackoff())
+	}
+	return b.backoffTimer
+}
 
 // p371
 type jitteredBackoffManagerImpl struct {
@@ -250,6 +288,17 @@ func PollUntil(interval time.Duration, condition ConditionFunc, stopCh <-chan st
 func PollUntilWithContext(ctx context.Context, interval time.Duration, condition ConditionWithContextFunc) error {
 	// poller每隔interval时间产生一个信号，直到传递给他的ctx结束
 	return poll(ctx, false, poller(interval, 0), condition)
+}
+
+// p533
+func PollImmediateUntil(interval time.Duration, condition ConditionFunc, stopCh <-chan struct{}) error {
+	ctx, cancel := contextForChannel(stopCh)
+	defer cancel()
+	return PollImmediateUntilWithContext(ctx, interval, condition.WithContext())
+}
+
+func PollImmediateUntilWithContext(ctx context.Context, interval time.Duration, condition ConditionWithContextFunc) error {
+	return poll(ctx, true, poller(interval, 0), condition)
 }
 
 // p578

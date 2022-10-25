@@ -11,6 +11,7 @@ import (
 )
 
 func HTTPClientFor(config *Config) (*http.Client, error) {
+	// 通过config生成一个http.RoundTripper
 	transport, err := TransportFor(config)
 	if err != nil {
 		return nil, err
@@ -41,6 +42,7 @@ func TransportFor(config *Config) (http.RoundTripper, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 实际生成一个http.RoundTripper
 	return transport.New(cfg)
 }
 

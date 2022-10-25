@@ -7,12 +7,26 @@ import (
 	"strings"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"k8s.io/apiserver/pkg/authentication/authenticator"
+	serviceaccountcontroller "k8s.io/kubernetes/pkg/controller/serviceaccount"
+	kubeauthenticator "k8s.io/kubernetes/pkg/kubeapiserver/authenticator"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/bootstrap"
+
 	"github.com/spf13/pflag"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	genericapiserver "k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/server/egressselector"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
+	openapicommon "k8s.io/kube-openapi/pkg/common"
+
 	authzmodes "k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes"
 )
 
@@ -325,6 +339,141 @@ func (o *BuiltInAuthenticationOptions) AddFlags(fs *pflag.FlagSet) {
 		fs.DurationVar(&o.WebHook.CacheTTL, "authentication-token-webhook-cache-ttl", o.WebHook.CacheTTL,
 			"The duration to cache responses from the webhook token authenticator.")
 	}
+}
+
+func (o *BuiltInAuthenticationOptions) ToAuthenticationConfig() (kubeauthenticator.Config, error) {
+	ret := kubeauthenticator.Config{
+		TokenSuccessCacheTTL: o.TokenSuccessCacheTTL,
+		TokenFailureCacheTTL: o.TokenFailureCacheTTL,
+	}
+
+	if o.Anonymous != nil {
+		ret.Anonymous = o.Anonymous.Allow
+	}
+
+	if o.BootstrapToken != nil {
+		ret.BootstrapToken = o.BootstrapToken.Enable
+	}
+
+	if o.ClientCert != nil {
+		var err error
+		ret.ClientCAContentProvider, err = o.ClientCert.GetClientCAContentProvider()
+		if err != nil {
+			return kubeauthenticator.Config{}, err
+		}
+	}
+
+	if o.OIDC != nil {
+		ret.OIDCCAFile = o.OIDC.CAFile
+		ret.OIDCClientID = o.OIDC.ClientID
+		ret.OIDCGroupsClaim = o.OIDC.GroupsClaim
+		ret.OIDCGroupsPrefix = o.OIDC.GroupsPrefix
+		ret.OIDCIssuerURL = o.OIDC.IssuerURL
+		ret.OIDCUsernameClaim = o.OIDC.UsernameClaim
+		ret.OIDCUsernamePrefix = o.OIDC.UsernamePrefix
+		ret.OIDCSigningAlgs = o.OIDC.SigningAlgs
+		ret.OIDCRequiredClaims = o.OIDC.RequiredClaims
+	}
+
+	if o.RequestHeader != nil {
+		var err error
+		ret.RequestHeaderConfig, err = o.RequestHeader.ToAuthenticationRequestHeaderConfig()
+		if err != nil {
+			return kubeauthenticator.Config{}, err
+		}
+	}
+
+	ret.APIAudiences = o.APIAudiences
+	if o.ServiceAccounts != nil {
+		if len(o.ServiceAccounts.Issuers) != 0 && len(o.APIAudiences) == 0 {
+			ret.APIAudiences = authenticator.Audiences(o.ServiceAccounts.Issuers)
+		}
+		ret.ServiceAccountKeyFiles = o.ServiceAccounts.KeyFiles
+		ret.ServiceAccountIssuers = o.ServiceAccounts.Issuers
+		ret.ServiceAccountLookup = o.ServiceAccounts.Lookup
+	}
+	if o.TokenFile != nil {
+		ret.TokenAuthFile = o.TokenFile.TokenFile
+	}
+
+	if o.WebHook != nil {
+		ret.WebhookTokenAuthnConfigFile = o.WebHook.ConfigFile
+		ret.WebhookTokenAuthnVersion = o.WebHook.Version
+		ret.WebhookTokenAuthnCacheTTL = o.WebHook.CacheTTL
+		ret.WebhookRetryBackoff = o.WebHook.RetryBackoff
+
+		if len(o.WebHook.ConfigFile) > 0 && o.WebHook.CacheTTL > 0 {
+			if o.TokenSuccessCacheTTL > 0 && o.WebHook.CacheTTL < o.TokenSuccessCacheTTL {
+				klog.Warningf("the webhook cache ttl of %s is shorter than the overall cache ttl of %s for successful token authentication attempts.", o.WebHook.CacheTTL, o.TokenSuccessCacheTTL)
+			}
+			if o.TokenFailureCacheTTL > 0 && o.WebHook.CacheTTL < o.TokenFailureCacheTTL {
+				klog.Warningf("the webhook cache ttl of %s is shorter than the overall cache ttl of %s for failed token authentication attempts.", o.WebHook.CacheTTL, o.TokenFailureCacheTTL)
+			}
+		}
+	}
+
+	return ret, nil
+}
+
+func (o *BuiltInAuthenticationOptions) ApplyTo(authInfo *genericapiserver.AuthenticationInfo, secureServing *genericapiserver.SecureServingInfo, egressSelector *egressselector.EgressSelector, openAPIConfig *openapicommon.Config, openAPIV3Config *openapicommon.Config, extclient kubernetes.Interface, versionedInformer informers.SharedInformerFactory) error {
+	if o == nil {
+		return nil
+	}
+
+	if openAPIConfig == nil {
+		return errors.New("uninitialized OpenAPIConfig")
+	}
+
+	authenticatorConfig, err := o.ToAuthenticationConfig()
+	if err != nil {
+		return err
+	}
+
+	if authenticatorConfig.ClientCAContentProvider != nil {
+		if err = authInfo.ApplyClientCert(authenticatorConfig.ClientCAContentProvider, secureServing); err != nil {
+			return fmt.Errorf("unable to load client CA file: %v", err)
+		}
+	}
+	if authenticatorConfig.RequestHeaderConfig != nil && authenticatorConfig.RequestHeaderConfig.CAContentProvider != nil {
+		if err = authInfo.ApplyClientCert(authenticatorConfig.RequestHeaderConfig.CAContentProvider, secureServing); err != nil {
+			return fmt.Errorf("unable to load client CA file: %v", err)
+		}
+	}
+
+	authInfo.APIAudiences = o.APIAudiences
+	if o.ServiceAccounts != nil && len(o.ServiceAccounts.Issuers) != 0 && len(o.APIAudiences) == 0 {
+		authInfo.APIAudiences = authenticator.Audiences(o.ServiceAccounts.Issuers)
+	}
+
+	authenticatorConfig.ServiceAccountTokenGetter = serviceaccountcontroller.NewGetterFromClient(
+		extclient,
+		versionedInformer.Core().V1().Secrets().Lister(),
+		versionedInformer.Core().V1().ServiceAccounts().Lister(),
+		versionedInformer.Core().V1().Pods().Lister(),
+	)
+
+	authenticatorConfig.BootstrapTokenAuthenticator = bootstrap.NewTokenAuthenticator(
+		versionedInformer.Core().V1().Secrets().Lister().Secrets(metav1.NamespaceSystem),
+	)
+
+	if egressSelector != nil {
+		egressDialer, err := egressSelector.Lookup(egressselector.ControlPlane.AsNetworkContext())
+		if err != nil {
+			return err
+		}
+		authenticatorConfig.CustomDial = egressDialer
+	}
+
+	// 多种认证方式，在这里根据配置来设置
+	authInfo.Authenticator, openAPIConfig.SecurityDefinitions, err = authenticatorConfig.New()
+	if openAPIV3Config != nil {
+		openAPIV3Config.SecurityDefinitions = openAPIConfig.SecurityDefinitions
+	}
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (o *BuiltInAuthenticationOptions) ApplyAuthorization(authorization *BuiltInAuthorizationOptions) {

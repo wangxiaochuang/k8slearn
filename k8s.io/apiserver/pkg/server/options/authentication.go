@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apiserver/pkg/authentication/authenticatorfactory"
+	"k8s.io/apiserver/pkg/authentication/request/headerrequest"
 	"k8s.io/apiserver/pkg/server/dynamiccertificates"
 )
 
@@ -83,10 +85,42 @@ func (s *RequestHeaderAuthenticationOptions) AddFlags(fs *pflag.FlagSet) {
 		"by the authorities in --requestheader-client-ca-file is allowed.")
 }
 
+func (s *RequestHeaderAuthenticationOptions) ToAuthenticationRequestHeaderConfig() (*authenticatorfactory.RequestHeaderConfig, error) {
+	if len(s.ClientCAFile) == 0 {
+		return nil, nil
+	}
+
+	caBundleProvider, err := dynamiccertificates.NewDynamicCAContentFromFile("request-header", s.ClientCAFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return &authenticatorfactory.RequestHeaderConfig{
+		UsernameHeaders:     headerrequest.StaticStringSlice(s.UsernameHeaders),
+		GroupHeaders:        headerrequest.StaticStringSlice(s.GroupHeaders),
+		ExtraHeaderPrefixes: headerrequest.StaticStringSlice(s.ExtraHeaderPrefixes),
+		CAContentProvider:   caBundleProvider,
+		AllowedClientNames:  headerrequest.StaticStringSlice(s.AllowedNames),
+	}, nil
+}
+
 // p140
 type ClientCertAuthenticationOptions struct {
 	ClientCA          string
 	CAContentProvider dynamiccertificates.CAContentProvider
+}
+
+// p151
+func (s *ClientCertAuthenticationOptions) GetClientCAContentProvider() (dynamiccertificates.CAContentProvider, error) {
+	if s.CAContentProvider != nil {
+		return s.CAContentProvider, nil
+	}
+
+	if len(s.ClientCA) == 0 {
+		return nil, nil
+	}
+
+	return dynamiccertificates.NewDynamicCAContentFromFile("client-ca-bundle", s.ClientCA)
 }
 
 // 163

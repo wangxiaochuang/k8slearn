@@ -1,5 +1,11 @@
 #!/bin/bash
 
+if [ "`ps -ef |grep etcd |grep -v 'grep'`" = "" ]; then
+    cd /opt/etcd
+    nohup etcd &
+    cd -
+fi
+
 go run k8s.io/kubernetes/cmd/kube-apiserver $* \
     --cert-dir=/tmp/kubernetes \
     --service-account-issuer=xxxxx \

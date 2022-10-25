@@ -7,9 +7,16 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	gruntime "runtime"
+	"strings"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/component-base/version"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -160,17 +167,134 @@ type ContentConfig struct {
 
 // p339
 func RESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RESTClient, error) {
-	panic("not implemented")
+	if config.GroupVersion == nil {
+		return nil, fmt.Errorf("GroupVersion is required when initializing a RESTClient")
+	}
+	if config.NegotiatedSerializer == nil {
+		return nil, fmt.Errorf("NegotiatedSerializer is required when initializing a RESTClient")
+	}
+
+	baseURL, versionedAPIPath, err := defaultServerUrlFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	rateLimiter := config.RateLimiter
+	if rateLimiter == nil {
+		qps := config.QPS
+		if config.QPS == 0.0 {
+			qps = DefaultQPS
+		}
+		burst := config.Burst
+		if config.Burst == 0 {
+			burst = DefaultBurst
+		}
+		if qps > 0 {
+			rateLimiter = flowcontrol.NewTokenBucketRateLimiter(qps, burst)
+		}
+	}
+
+	var gv schema.GroupVersion
+	if config.GroupVersion != nil {
+		gv = *config.GroupVersion
+	}
+	clientContent := ClientContentConfig{
+		AcceptContentTypes: config.AcceptContentTypes,
+		ContentType:        config.ContentType,
+		GroupVersion:       gv,
+		Negotiator:         runtime.NewClientNegotiator(config.NegotiatedSerializer, gv),
+	}
+	restClient, err := NewRESTClient(baseURL, versionedAPIPath, clientContent, rateLimiter, httpClient)
+	if err == nil && config.WarningHandler != nil {
+		restClient.warningHandler = config.WarningHandler
+	}
+	return restClient, err
 }
 
 // p409
 func UnversionedRESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RESTClient, error) {
-	panic("not implemented")
+	if config.NegotiatedSerializer == nil {
+		return nil, fmt.Errorf("NegotiatedSerializer is required when initializing a RESTClient")
+	}
+
+	baseURL, versionedAPIPath, err := defaultServerUrlFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	rateLimiter := config.RateLimiter
+	if rateLimiter == nil {
+		qps := config.QPS
+		if config.QPS == 0.0 {
+			qps = DefaultQPS
+		}
+		burst := config.Burst
+		if config.Burst == 0 {
+			burst = DefaultBurst
+		}
+		if qps > 0 {
+			rateLimiter = flowcontrol.NewTokenBucketRateLimiter(qps, burst)
+		}
+	}
+
+	gv := metav1.SchemeGroupVersion
+	if config.GroupVersion != nil {
+		gv = *config.GroupVersion
+	}
+	clientContent := ClientContentConfig{
+		AcceptContentTypes: config.AcceptContentTypes,
+		ContentType:        config.ContentType,
+		GroupVersion:       gv,
+		Negotiator:         runtime.NewClientNegotiator(config.NegotiatedSerializer, gv),
+	}
+
+	restClient, err := NewRESTClient(baseURL, versionedAPIPath, clientContent, rateLimiter, httpClient)
+	if err == nil && config.WarningHandler != nil {
+		restClient.warningHandler = config.WarningHandler
+	}
+	return restClient, err
+}
+
+// p462
+func adjustCommit(c string) string {
+	if len(c) == 0 {
+		return "unknown"
+	}
+	if len(c) > 7 {
+		return c[:7]
+	}
+	return c
+}
+
+func adjustVersion(v string) string {
+	if len(v) == 0 {
+		return "unknown"
+	}
+	seg := strings.SplitN(v, "-", 2)
+	return seg[0]
+}
+
+func adjustCommand(p string) string {
+	// Unlikely, but better than returning "".
+	if len(p) == 0 {
+		return "unknown"
+	}
+	return filepath.Base(p)
+}
+
+func buildUserAgent(command, version, os, arch, commit string) string {
+	return fmt.Sprintf(
+		"%s/%s (%s/%s) kubernetes/%s", command, version, os, arch, commit)
 }
 
 // p499
 func DefaultKubernetesUserAgent() string {
-	panic("not implemented")
+	return buildUserAgent(
+		adjustCommand(os.Args[0]),
+		adjustVersion(version.Get().GitVersion),
+		gruntime.GOOS,
+		gruntime.GOARCH,
+		adjustCommit(version.Get().GitCommit))
 }
 
 // p630

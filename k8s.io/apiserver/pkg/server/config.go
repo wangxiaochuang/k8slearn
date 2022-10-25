@@ -205,6 +205,23 @@ func DefaultOpenAPIV3Config(getDefinitions openapicommon.GetOpenAPIDefinitions, 
 	return defaultConfig
 }
 
+// p419
+func (c *AuthenticationInfo) ApplyClientCert(clientCA dynamiccertificates.CAContentProvider, servingInfo *SecureServingInfo) error {
+	if servingInfo == nil {
+		return nil
+	}
+	if clientCA == nil {
+		return nil
+	}
+	if servingInfo.ClientCA == nil {
+		servingInfo.ClientCA = clientCA
+		return nil
+	}
+
+	servingInfo.ClientCA = dynamiccertificates.NewUnionCAContentProvider(servingInfo.ClientCA, clientCA)
+	return nil
+}
+
 // p454
 func (c *Config) AddHealthChecks(healthChecks ...healthz.HealthChecker) {
 	for _, check := range healthChecks {

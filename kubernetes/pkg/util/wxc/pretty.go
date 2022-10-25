@@ -2,6 +2,7 @@ package wxc
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/kr/pretty"
 )
@@ -12,4 +13,5 @@ func P(objs ...interface{}) {
 	} else {
 		fmt.Printf("%# v\n", pretty.Formatter(objs))
 	}
+	time.Sleep(time.Hour)
 }
