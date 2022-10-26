@@ -404,3 +404,30 @@ func poller(interval, timeout time.Duration) WaitWithContextFunc {
 		return ch
 	})
 }
+
+// p730
+func ExponentialBackoffWithContext(ctx context.Context, backoff Backoff, condition ConditionFunc) error {
+	for backoff.Steps > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if ok, err := runConditionWithCrashProtection(condition); err != nil || ok {
+			return err
+		}
+
+		if backoff.Steps == 1 {
+			break
+		}
+
+		waitBeforeRetry := backoff.Step()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitBeforeRetry):
+		}
+	}
+	return ErrWaitTimeout
+}

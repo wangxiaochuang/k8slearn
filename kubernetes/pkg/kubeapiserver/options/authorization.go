@@ -9,6 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
+	versionedinformers "k8s.io/client-go/informers"
+	"k8s.io/kubernetes/pkg/kubeapiserver/authorizer"
 	authzmodes "k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes"
 )
 
@@ -97,4 +99,17 @@ func (o *BuiltInAuthorizationOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&o.WebhookCacheUnauthorizedTTL,
 		"authorization-webhook-cache-unauthorized-ttl", o.WebhookCacheUnauthorizedTTL,
 		"The duration to cache 'unauthorized' responses from the webhook authorizer.")
+}
+
+func (o *BuiltInAuthorizationOptions) ToAuthorizationConfig(versionedInformerFactory versionedinformers.SharedInformerFactory) authorizer.Config {
+	return authorizer.Config{
+		AuthorizationModes:          o.Modes,
+		PolicyFile:                  o.PolicyFile,
+		WebhookConfigFile:           o.WebhookConfigFile,
+		WebhookVersion:              o.WebhookVersion,
+		WebhookCacheAuthorizedTTL:   o.WebhookCacheAuthorizedTTL,
+		WebhookCacheUnauthorizedTTL: o.WebhookCacheUnauthorizedTTL,
+		VersionedInformerFactory:    versionedInformerFactory,
+		WebhookRetryBackoff:         o.WebhookRetryBackoff,
+	}
 }

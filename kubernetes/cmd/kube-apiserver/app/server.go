@@ -9,15 +9,21 @@ import (
 	"strings"
 	"time"
 
+	kubeapiserveradmission "k8s.io/kubernetes/pkg/kubeapiserver/admission"
+
+	rbacrest "k8s.io/kubernetes/pkg/registry/rbac/rest"
+
 	clientgoclientset "k8s.io/client-go/kubernetes"
 	aggregatorscheme "k8s.io/kube-aggregator/pkg/apiserver/scheme"
 
 	extensionsapiserver "k8s.io/apiextensions-apiserver/pkg/apiserver"
 
+	"k8s.io/apiserver/pkg/authorization/authorizer"
 	openapinamer "k8s.io/apiserver/pkg/endpoints/openapi"
 
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 
+	"k8s.io/apiserver/pkg/server/egressselector"
 	"k8s.io/apiserver/pkg/server/filters"
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
 
@@ -50,6 +56,7 @@ import (
 	"k8s.io/kubernetes/pkg/controlplane"
 	"k8s.io/kubernetes/pkg/kubeapiserver"
 	kubeauthenticator "k8s.io/kubernetes/pkg/kubeapiserver/authenticator"
+	"k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes"
 	netutils "k8s.io/utils/net"
 )
 
@@ -390,6 +397,46 @@ func buildGenericConfig(
 		return
 	}
 
+	genericConfig.Authorization.Authorizer, genericConfig.RuleResolver, err = BuildAuthorizer(s, genericConfig.EgressSelector, versionedInformers)
+	if err != nil {
+		lastErr = fmt.Errorf("invalid authorization config: %v", err)
+		return
+	}
+	if !sets.NewString(s.Authorization.Modes...).Has(modes.ModeRBAC) {
+		genericConfig.DisabledPostStartHooks.Insert(rbacrest.PostStartHookName)
+	}
+
+	lastErr = s.Audit.ApplyTo(genericConfig)
+	if lastErr != nil {
+		return
+	}
+
+	admissionConfig := &kubeapiserveradmission.Config{
+		ExternalInformers:    versionedInformers,
+		LoopbackClientConfig: genericConfig.LoopbackClientConfig,
+		CloudConfigFile:      s.CloudProvider.CloudConfigFile,
+	}
+	serviceResolver = buildServiceResolver(s.EnableAggregatorRouting, genericConfig.LoopbackClientConfig.Host, versionedInformers)
+	pluginInitializers, admissionPostStartHook, err = admissionConfig.New(proxyTransport, genericConfig.EgressSelector, serviceResolver, genericConfig.TracerProvider)
+	if err != nil {
+		lastErr = fmt.Errorf("failed to create admission plugin initializer: %v", err)
+		return
+	}
+
 	time.Sleep(time.Minute)
 	panic("not implemented")
+}
+
+func BuildAuthorizer(s *options.ServerRunOptions, EgressSelector *egressselector.EgressSelector, versionedInformers clientgoinformers.SharedInformerFactory) (authorizer.Authorizer, authorizer.RuleResolver, error) {
+	authorizationConfig := s.Authorization.ToAuthorizationConfig(versionedInformers)
+
+	if EgressSelector != nil {
+		egressDialer, err := EgressSelector.Lookup(egressselector.ControlPlane.AsNetworkContext())
+		if err != nil {
+			return nil, nil, err
+		}
+		authorizationConfig.CustomDial = egressDialer
+	}
+
+	return authorizationConfig.New()
 }

@@ -211,6 +211,25 @@ func RESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RES
 	return restClient, err
 }
 
+// p387
+func UnversionedRESTClientFor(config *Config) (*RESTClient, error) {
+	if config.NegotiatedSerializer == nil {
+		return nil, fmt.Errorf("NegotiatedSerializer is required when initializing a RESTClient")
+	}
+
+	_, _, err := defaultServerUrlFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	httpClient, err := HTTPClientFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return UnversionedRESTClientForConfigAndClient(config, httpClient)
+}
+
 // p409
 func UnversionedRESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RESTClient, error) {
 	if config.NegotiatedSerializer == nil {
