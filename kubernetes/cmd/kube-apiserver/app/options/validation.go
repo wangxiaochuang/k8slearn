@@ -74,6 +74,26 @@ func validateServiceNodePort(options *ServerRunOptions) []error {
 	return errs
 }
 
+func validateTokenRequest(options *ServerRunOptions) []error {
+	var errs []error
+
+	enableAttempted := options.ServiceAccountSigningKeyFile != "" ||
+		(len(options.Authentication.ServiceAccounts.Issuers) != 0 && options.Authentication.ServiceAccounts.Issuers[0] != "") ||
+		len(options.Authentication.APIAudiences) != 0
+
+	enableSucceeded := options.ServiceAccountIssuer != nil
+
+	if !enableAttempted {
+		errs = append(errs, errors.New("--service-account-signing-key-file and --service-account-issuer are required flags"))
+	}
+
+	if enableAttempted && !enableSucceeded {
+		errs = append(errs, errors.New("--service-account-signing-key-file, --service-account-issuer, and --api-audiences should be specified together"))
+	}
+
+	return errs
+}
+
 func validateAPIPriorityAndFairness(options *ServerRunOptions) []error {
 	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIPriorityAndFairness) && options.GenericServerRunOptions.EnablePriorityAndFairness {
 		// If none of the following runtime config options are specified, APF is
@@ -93,6 +113,17 @@ func validateAPIPriorityAndFairness(options *ServerRunOptions) []error {
 	return nil
 }
 
+func validateAPIServerIdentity(options *ServerRunOptions) []error {
+	var errs []error
+	if options.IdentityLeaseDurationSeconds <= 0 {
+		errs = append(errs, fmt.Errorf("--identity-lease-duration-seconds should be a positive number, but value '%d' provided", options.IdentityLeaseDurationSeconds))
+	}
+	if options.IdentityLeaseRenewIntervalSeconds <= 0 {
+		errs = append(errs, fmt.Errorf("--identity-lease-renew-interval-seconds should be a positive number, but value '%d' provided", options.IdentityLeaseRenewIntervalSeconds))
+	}
+	return errs
+}
+
 func (s *ServerRunOptions) Validate() []error {
 	var errs []error
 	if s.MasterCount <= 0 {
@@ -106,7 +137,11 @@ func (s *ServerRunOptions) Validate() []error {
 	errs = append(errs, s.Authentication.Validate()...)
 	errs = append(errs, s.Authorization.Validate()...)
 	errs = append(errs, s.Audit.Validate()...)
+	errs = append(errs, s.Admission.Validate()...)
 	errs = append(errs, s.APIEnablement.Validate(legacyscheme.Scheme, apiextensionsapiserver.Scheme, aggregatorscheme.Scheme)...)
+	errs = append(errs, validateTokenRequest(s)...)
+	// errs = append(errs, s.Metrics.Validate()...)
+	errs = append(errs, validateAPIServerIdentity(s)...)
 
 	return errs
 }

@@ -5,15 +5,22 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"k8s.io/kubernetes/pkg/serviceaccount"
+
+	utilflowcontrol "k8s.io/apiserver/pkg/util/flowcontrol"
+	"k8s.io/apiserver/pkg/util/webhook"
 	kubeapiserveradmission "k8s.io/kubernetes/pkg/kubeapiserver/admission"
+	"k8s.io/kubernetes/pkg/util/wxc"
 
 	rbacrest "k8s.io/kubernetes/pkg/registry/rbac/rest"
 
 	clientgoclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/keyutil"
 	aggregatorscheme "k8s.io/kube-aggregator/pkg/apiserver/scheme"
 
 	extensionsapiserver "k8s.io/apiextensions-apiserver/pkg/apiserver"
@@ -62,136 +69,6 @@ import (
 
 func init() {
 	utilruntime.Must(logs.AddFeatureGates(utilfeature.DefaultMutableFeatureGate))
-}
-
-// p532
-type completedServerRunOptions struct {
-	*options.ServerRunOptions
-}
-
-func Complete(s *options.ServerRunOptions) (completedServerRunOptions, error) {
-	var options completedServerRunOptions
-
-	if err := s.GenericServerRunOptions.DefaultAdvertiseAddress(s.SecureServing.SecureServingOptions); err != nil {
-		return options, err
-	}
-
-	// 从选项ServiceClusterIPRanges获取，如果没有默认是10.0.0.0/8
-	apiServerServiceIP, primaryServiceIPRange, secondaryServiceIPRange, err := getServiceIPAndRanges(s.ServiceClusterIPRanges)
-	if err != nil {
-		return options, err
-	}
-	s.PrimaryServiceClusterIPRange = primaryServiceIPRange
-	s.SecondaryServiceClusterIPRange = secondaryServiceIPRange
-	// 取主段的第一个
-	s.APIServerServiceIP = apiServerServiceIP
-
-	// 生成自签名证书
-	if err := s.SecureServing.MaybeDefaultWithSelfSignedCerts(s.GenericServerRunOptions.AdvertiseAddress.String(), []string{"kubernetes.default.svc", "kubernetes.default", "kubernetes"}, []net.IP{apiServerServiceIP}); err != nil {
-		return options, fmt.Errorf("error creating self-signed certificates: %v", err)
-	}
-
-	if len(s.GenericServerRunOptions.ExternalHost) == 0 {
-		if len(s.GenericServerRunOptions.AdvertiseAddress) > 0 {
-			s.GenericServerRunOptions.ExternalHost = s.GenericServerRunOptions.AdvertiseAddress.String()
-		} else {
-			if hostname, err := os.Hostname(); err == nil {
-				s.GenericServerRunOptions.ExternalHost = hostname
-			} else {
-				return options, fmt.Errorf("error finding host name: %v", err)
-			}
-		}
-		klog.Infof("external host was not specified, using %v", s.GenericServerRunOptions.ExternalHost)
-	}
-
-	s.Authentication.ApplyAuthorization(s.Authorization)
-
-	if s.ServiceAccountSigningKeyFile == "" {
-		if len(s.Authentication.ServiceAccounts.KeyFiles) == 0 && s.SecureServing.ServerCert.CertKey.KeyFile != "" {
-			if kubeauthenticator.IsValidServiceAccountKeyFile(s.SecureServing.ServerCert.CertKey.KeyFile) {
-				s.Authentication.ServiceAccounts.KeyFiles = []string{s.SecureServing.ServerCert.CertKey.KeyFile}
-			} else {
-				klog.Warning("No TLS key provided, service account token authentication disabled")
-			}
-		}
-	}
-
-	if s.ServiceAccountSigningKeyFile != "" && len(s.Authentication.ServiceAccounts.Issuers) != 0 && s.Authentication.ServiceAccounts.Issuers[0] != "" {
-		panic("not implemented")
-	}
-
-	if s.Etcd.EnableWatchCache {
-		sizes := kubeapiserver.DefaultWatchCacheSizes()
-		userSpecified, err := serveroptions.ParseWatchCacheSizes(s.Etcd.WatchCacheSizes)
-		if err != nil {
-			return options, err
-		}
-		for resource, size := range userSpecified {
-			sizes[resource] = size
-		}
-		// 把默认的和用户指定的合并
-		s.Etcd.WatchCacheSizes, err = serveroptions.WriteWatchCacheSizes(sizes)
-		if err != nil {
-			return options, err
-		}
-	}
-
-	for key, value := range s.APIEnablement.RuntimeConfig {
-		if key == "v1" || strings.HasPrefix(key, "v1/") ||
-			key == "api/v1" || strings.HasPrefix(key, "api/v1/") {
-			delete(s.APIEnablement.RuntimeConfig, key)
-			s.APIEnablement.RuntimeConfig["/v1"] = value
-		}
-		if key == "api/legacy" {
-			delete(s.APIEnablement.RuntimeConfig, key)
-		}
-	}
-
-	options.ServerRunOptions = s
-	return options, nil
-}
-
-// p669
-func getServiceIPAndRanges(serviceClusterIPRanges string) (net.IP, net.IPNet, net.IPNet, error) {
-	serviceClusterIPRangeList := []string{}
-	if serviceClusterIPRanges != "" {
-		serviceClusterIPRangeList = strings.Split(serviceClusterIPRanges, ",")
-	}
-
-	var apiServerServiceIP net.IP
-	var primaryServiceIPRange net.IPNet
-	// --service-cluster-ip-range可以是逗号分割的两个cidr，主副ip网络
-	var secondaryServiceIPRange net.IPNet
-	var err error
-	if len(serviceClusterIPRangeList) == 0 {
-		var primaryServiceClusterCIDR net.IPNet
-		primaryServiceIPRange, apiServerServiceIP, err = controlplane.ServiceIPRange(primaryServiceClusterCIDR)
-		if err != nil {
-			return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("error determining service IP ranges: %v", err)
-		}
-		return apiServerServiceIP, primaryServiceIPRange, net.IPNet{}, nil
-	}
-
-	_, primaryServiceClusterCIDR, err := netutils.ParseCIDRSloppy(serviceClusterIPRangeList[0])
-	if err != nil {
-		return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("service-cluster-ip-range[0] is not a valid cidr")
-	}
-
-	primaryServiceIPRange, apiServerServiceIP, err = controlplane.ServiceIPRange(*primaryServiceClusterCIDR)
-	if err != nil {
-		return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("error determining service IP ranges for primary service cidr: %v", err)
-	}
-
-	// user provided at least two entries
-	// note: validation asserts that the list is max of two dual stack entries
-	if len(serviceClusterIPRangeList) > 1 {
-		_, secondaryServiceClusterCIDR, err := netutils.ParseCIDRSloppy(serviceClusterIPRangeList[1])
-		if err != nil {
-			return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("service-cluster-ip-range[1] is not an ip net")
-		}
-		secondaryServiceIPRange = *secondaryServiceClusterCIDR
-	}
-	return apiServerServiceIP, primaryServiceIPRange, secondaryServiceIPRange, nil
 }
 
 func NewAPIServerCommand() *cobra.Command {
@@ -295,6 +172,8 @@ func CreateKubeAPIServerConfig(s completedServerRunOptions) (
 	proxyTransport := CreateProxyTransport()
 
 	buildGenericConfig(s.ServerRunOptions, proxyTransport)
+
+	wxc.P("buildGenericConfig done")
 	panic("not implemented")
 }
 
@@ -423,8 +302,22 @@ func buildGenericConfig(
 		return
 	}
 
-	time.Sleep(time.Minute)
-	panic("not implemented")
+	err = s.Admission.ApplyTo(
+		genericConfig,
+		versionedInformers,
+		kubeClientConfig,
+		utilfeature.DefaultFeatureGate,
+		pluginInitializers...)
+	if err != nil {
+		lastErr = fmt.Errorf("failed to initialize admission: %v", err)
+		return
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIPriorityAndFairness) && s.GenericServerRunOptions.EnablePriorityAndFairness {
+		genericConfig.FlowControl, lastErr = BuildPriorityAndFairness(s, clientgoExternalClient, versionedInformers)
+	}
+
+	return
 }
 
 func BuildAuthorizer(s *options.ServerRunOptions, EgressSelector *egressselector.EgressSelector, versionedInformers clientgoinformers.SharedInformerFactory) (authorizer.Authorizer, authorizer.RuleResolver, error) {
@@ -439,4 +332,183 @@ func BuildAuthorizer(s *options.ServerRunOptions, EgressSelector *egressselector
 	}
 
 	return authorizationConfig.New()
+}
+
+func BuildPriorityAndFairness(s *options.ServerRunOptions, extclient clientgoclientset.Interface, versionedInformer clientgoinformers.SharedInformerFactory) (utilflowcontrol.Interface, error) {
+	panic("not implemented")
+}
+
+// p532
+type completedServerRunOptions struct {
+	*options.ServerRunOptions
+}
+
+func Complete(s *options.ServerRunOptions) (completedServerRunOptions, error) {
+	var options completedServerRunOptions
+
+	if err := s.GenericServerRunOptions.DefaultAdvertiseAddress(s.SecureServing.SecureServingOptions); err != nil {
+		return options, err
+	}
+
+	// 从选项ServiceClusterIPRanges获取，如果没有默认是10.0.0.0/8
+	apiServerServiceIP, primaryServiceIPRange, secondaryServiceIPRange, err := getServiceIPAndRanges(s.ServiceClusterIPRanges)
+	if err != nil {
+		return options, err
+	}
+	s.PrimaryServiceClusterIPRange = primaryServiceIPRange
+	s.SecondaryServiceClusterIPRange = secondaryServiceIPRange
+	// 取主段的第一个
+	s.APIServerServiceIP = apiServerServiceIP
+
+	// 生成自签名证书
+	if err := s.SecureServing.MaybeDefaultWithSelfSignedCerts(s.GenericServerRunOptions.AdvertiseAddress.String(), []string{"kubernetes.default.svc", "kubernetes.default", "kubernetes"}, []net.IP{apiServerServiceIP}); err != nil {
+		return options, fmt.Errorf("error creating self-signed certificates: %v", err)
+	}
+
+	if len(s.GenericServerRunOptions.ExternalHost) == 0 {
+		if len(s.GenericServerRunOptions.AdvertiseAddress) > 0 {
+			s.GenericServerRunOptions.ExternalHost = s.GenericServerRunOptions.AdvertiseAddress.String()
+		} else {
+			if hostname, err := os.Hostname(); err == nil {
+				s.GenericServerRunOptions.ExternalHost = hostname
+			} else {
+				return options, fmt.Errorf("error finding host name: %v", err)
+			}
+		}
+		klog.Infof("external host was not specified, using %v", s.GenericServerRunOptions.ExternalHost)
+	}
+
+	s.Authentication.ApplyAuthorization(s.Authorization)
+
+	if s.ServiceAccountSigningKeyFile == "" {
+		if len(s.Authentication.ServiceAccounts.KeyFiles) == 0 && s.SecureServing.ServerCert.CertKey.KeyFile != "" {
+			if kubeauthenticator.IsValidServiceAccountKeyFile(s.SecureServing.ServerCert.CertKey.KeyFile) {
+				s.Authentication.ServiceAccounts.KeyFiles = []string{s.SecureServing.ServerCert.CertKey.KeyFile}
+			} else {
+				klog.Warning("No TLS key provided, service account token authentication disabled")
+			}
+		}
+	}
+
+	if s.ServiceAccountSigningKeyFile != "" && len(s.Authentication.ServiceAccounts.Issuers) != 0 && s.Authentication.ServiceAccounts.Issuers[0] != "" {
+		sk, err := keyutil.PrivateKeyFromFile(s.ServiceAccountSigningKeyFile)
+		if err != nil {
+			return options, fmt.Errorf("failed to parse service-account-issuer-key-file: %v", err)
+		}
+
+		if s.Authentication.ServiceAccounts.MaxExpiration != 0 {
+			lowBound := time.Hour
+			upBound := time.Duration(1<<32) * time.Second
+			if s.Authentication.ServiceAccounts.MaxExpiration < lowBound ||
+				s.Authentication.ServiceAccounts.MaxExpiration > upBound {
+				return options, fmt.Errorf("the service-account-max-token-expiration must be between 1 hour and 2^32 seconds")
+			}
+			if s.Authentication.ServiceAccounts.ExtendExpiration {
+				if s.Authentication.ServiceAccounts.MaxExpiration < serviceaccount.WarnOnlyBoundTokenExpirationSeconds*time.Second {
+					klog.Warningf("service-account-extend-token-expiration is true, in order to correctly trigger safe transition logic, service-account-max-token-expiration must be set longer than %d seconds (currently %s)", serviceaccount.WarnOnlyBoundTokenExpirationSeconds, s.Authentication.ServiceAccounts.MaxExpiration)
+				}
+				if s.Authentication.ServiceAccounts.MaxExpiration < serviceaccount.ExpirationExtensionSeconds*time.Second {
+					klog.Warningf("service-account-extend-token-expiration is true, enabling tokens valid up to %d seconds, which is longer than service-account-max-token-expiration set to %s seconds", serviceaccount.ExpirationExtensionSeconds, s.Authentication.ServiceAccounts.MaxExpiration)
+				}
+			}
+		}
+
+		s.ServiceAccountIssuer, err = serviceaccount.JWTTokenGenerator(s.Authentication.ServiceAccounts.Issuers[0], sk)
+		if err != nil {
+			return options, fmt.Errorf("failed to build token generator: %v", err)
+		}
+		s.ServiceAccountTokenMaxExpiration = s.Authentication.ServiceAccounts.MaxExpiration
+	}
+
+	if s.Etcd.EnableWatchCache {
+		sizes := kubeapiserver.DefaultWatchCacheSizes()
+		userSpecified, err := serveroptions.ParseWatchCacheSizes(s.Etcd.WatchCacheSizes)
+		if err != nil {
+			return options, err
+		}
+		for resource, size := range userSpecified {
+			sizes[resource] = size
+		}
+		// 把默认的和用户指定的合并
+		s.Etcd.WatchCacheSizes, err = serveroptions.WriteWatchCacheSizes(sizes)
+		if err != nil {
+			return options, err
+		}
+	}
+
+	for key, value := range s.APIEnablement.RuntimeConfig {
+		if key == "v1" || strings.HasPrefix(key, "v1/") ||
+			key == "api/v1" || strings.HasPrefix(key, "api/v1/") {
+			delete(s.APIEnablement.RuntimeConfig, key)
+			s.APIEnablement.RuntimeConfig["/v1"] = value
+		}
+		if key == "api/legacy" {
+			delete(s.APIEnablement.RuntimeConfig, key)
+		}
+	}
+
+	options.ServerRunOptions = s
+	return options, nil
+}
+
+func buildServiceResolver(enabledAggregatorRouting bool, hostname string, informer clientgoinformers.SharedInformerFactory) webhook.ServiceResolver {
+	var serviceResolver webhook.ServiceResolver
+	if enabledAggregatorRouting {
+		serviceResolver = aggregatorapiserver.NewEndpointServiceResolver(
+			informer.Core().V1().Services().Lister(),
+			informer.Core().V1().Endpoints().Lister(),
+		)
+	} else {
+		serviceResolver = aggregatorapiserver.NewClusterIPServiceResolver(
+			informer.Core().V1().Services().Lister(),
+		)
+	}
+	// resolve kubernetes.default.svc locally
+	if localHost, err := url.Parse(hostname); err == nil {
+		serviceResolver = aggregatorapiserver.NewLoopbackServiceResolver(serviceResolver, localHost)
+	}
+	return serviceResolver
+}
+
+// p669
+func getServiceIPAndRanges(serviceClusterIPRanges string) (net.IP, net.IPNet, net.IPNet, error) {
+	serviceClusterIPRangeList := []string{}
+	if serviceClusterIPRanges != "" {
+		serviceClusterIPRangeList = strings.Split(serviceClusterIPRanges, ",")
+	}
+
+	var apiServerServiceIP net.IP
+	var primaryServiceIPRange net.IPNet
+	// --service-cluster-ip-range可以是逗号分割的两个cidr，主副ip网络
+	var secondaryServiceIPRange net.IPNet
+	var err error
+	if len(serviceClusterIPRangeList) == 0 {
+		var primaryServiceClusterCIDR net.IPNet
+		primaryServiceIPRange, apiServerServiceIP, err = controlplane.ServiceIPRange(primaryServiceClusterCIDR)
+		if err != nil {
+			return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("error determining service IP ranges: %v", err)
+		}
+		return apiServerServiceIP, primaryServiceIPRange, net.IPNet{}, nil
+	}
+
+	_, primaryServiceClusterCIDR, err := netutils.ParseCIDRSloppy(serviceClusterIPRangeList[0])
+	if err != nil {
+		return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("service-cluster-ip-range[0] is not a valid cidr")
+	}
+
+	primaryServiceIPRange, apiServerServiceIP, err = controlplane.ServiceIPRange(*primaryServiceClusterCIDR)
+	if err != nil {
+		return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("error determining service IP ranges for primary service cidr: %v", err)
+	}
+
+	// user provided at least two entries
+	// note: validation asserts that the list is max of two dual stack entries
+	if len(serviceClusterIPRangeList) > 1 {
+		_, secondaryServiceClusterCIDR, err := netutils.ParseCIDRSloppy(serviceClusterIPRangeList[1])
+		if err != nil {
+			return net.IP{}, net.IPNet{}, net.IPNet{}, fmt.Errorf("service-cluster-ip-range[1] is not an ip net")
+		}
+		secondaryServiceIPRange = *secondaryServiceClusterCIDR
+	}
+	return apiServerServiceIP, primaryServiceIPRange, secondaryServiceIPRange, nil
 }
