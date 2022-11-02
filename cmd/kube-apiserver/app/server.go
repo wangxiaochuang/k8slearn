@@ -138,6 +138,7 @@ cluster's shared state through which all other components interact.`,
 				if len(arg) > 0 {
 					return fmt.Errorf("%q does not take any arguments, got %q", cmd.CommandPath(), args)
 				}
+				wxc.P("prepare to run")
 			}
 			return nil
 		},
@@ -199,13 +200,13 @@ func CreateServerChain(completedOptions completedServerRunOptions, stopCh <-chan
 		return nil, err
 	}
 
-	wxc.P("xxxxxxxxx")
 	// 这里会创建generic server，并且装载支持的所有对象的api接口
 	kubeAPIServer, err := CreateKubeAPIServer(kubeAPIServerConfig, apiExtensionsServer.GenericAPIServer)
 	if err != nil {
 		return nil, err
 	}
 
+	wxc.P("\nCreateKubeAPIServer done")
 	// aggregator comes last in the chain
 	aggregatorConfig, err := createAggregatorConfig(*kubeAPIServerConfig.GenericConfig, completedOptions.ServerRunOptions, kubeAPIServerConfig.ExtraConfig.VersionedInformers, serviceResolver, kubeAPIServerConfig.ExtraConfig.ProxyTransport, pluginInitializer)
 	if err != nil {

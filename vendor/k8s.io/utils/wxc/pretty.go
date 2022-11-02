@@ -15,3 +15,11 @@ func P(objs ...interface{}) {
 	}
 	time.Sleep(time.Hour)
 }
+
+func Print(objs ...interface{}) {
+	if len(objs) == 1 {
+		fmt.Printf("wxc.Print => %# v\n", pretty.Formatter(objs[0]))
+	} else {
+		fmt.Printf("wxc.Print => %# v\n", pretty.Formatter(objs))
+	}
+}

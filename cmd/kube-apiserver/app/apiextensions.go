@@ -35,7 +35,6 @@ import (
 	"k8s.io/apiserver/pkg/util/webhook"
 	kubeexternalinformers "k8s.io/client-go/informers"
 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
-	"k8s.io/utils/wxc"
 )
 
 func createAPIExtensionsConfig(
@@ -66,7 +65,6 @@ func createAPIExtensionsConfig(
 	if err != nil {
 		return nil, err
 	}
-	wxc.P(commandOptions.Admission)
 
 	// copy the etcd options so we don't mutate originals.
 	etcdOptions := *commandOptions.Etcd

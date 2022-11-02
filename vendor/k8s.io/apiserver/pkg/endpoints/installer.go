@@ -109,6 +109,7 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 		i++
 	}
 	sort.Strings(paths)
+
 	for _, path := range paths {
 		apiResource, resourceInfo, err := a.registerResourceHandlers(path, a.group.Storage[path], ws)
 		if err != nil {

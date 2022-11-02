@@ -139,6 +139,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 	// hasCRDInformerSyncedSignal is closed when the CRD informer this server uses has been fully synchronized.
 	// It ensures that requests to potential custom resource endpoints while the server hasn't installed all known HTTP paths get a 503 error instead of a 404
 	hasCRDInformerSyncedSignal := make(chan struct{})
+	// informer完全同步完成后，会发送通知
 	if err := genericServer.RegisterMuxAndDiscoveryCompleteSignal("CRDInformerHasNotSynced", hasCRDInformerSyncedSignal); err != nil {
 		return nil, err
 	}

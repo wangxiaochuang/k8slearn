@@ -377,6 +377,7 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource 
 	}
 
 	if len(storage) > 0 {
+		// 传统的资源，版本都是v1
 		apiGroupInfo.VersionedResourcesStorageMap["v1"] = storage
 	}
 

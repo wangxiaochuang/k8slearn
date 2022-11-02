@@ -10,11 +10,11 @@ if [ "$1" = "test" ]; then
     go run k8s.io/kubernetes/cmd/mytest $* \
     exit 0
 fi
-
 go run k8s.io/kubernetes/cmd/kube-apiserver $* \
+    --v=0 \
     --authorization-mode=Node,RBAC \
     --cloud-provider= --cloud-config= --vmodule= \
-    --v=0 --audit-policy-file=testdata/kube-audit-policy-file \
+    --audit-policy-file=testdata/kube-audit-policy-file \
     --audit-log-path=/tmp/kube-apiserver-audit.log \
     --authorization-webhook-config-file= --authentication-token-webhook-config-file= \
     --cert-dir=./cert-dir/ \
@@ -45,4 +45,4 @@ go run k8s.io/kubernetes/cmd/kube-apiserver $* \
     --requestheader-allowed-names=system:auth-proxy \
     --proxy-client-cert-file=cert-dir/client-auth-proxy.crt \
     --proxy-client-key-file=cert-dir/client-auth-proxy.key \
-    --cors-allowed-origins='/127.0.0.1(:[0-9]+)?$,/localhost(:[0-9]+)?$'
+    --cors-allowed-origins='/127.0.0.1(:[0-9]+)?$,/localhost(:[0-9]+)?$' 2>/tmp/err.log
