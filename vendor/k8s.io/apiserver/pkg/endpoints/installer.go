@@ -110,6 +110,7 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 	}
 	sort.Strings(paths)
 
+	// 遍历这个apiGroup下的所有path，并注册handler到service
 	for _, path := range paths {
 		apiResource, resourceInfo, err := a.registerResourceHandlers(path, a.group.Storage[path], ws)
 		if err != nil {
@@ -714,6 +715,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			} else {
 				handler = metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, deprecated, removedRelease, handler)
 			}
+			// 废弃的接口，都会打印警告信息
 			handler = utilwarning.AddWarningsHandler(handler, warnings)
 
 			doc := "read the specified " + kind

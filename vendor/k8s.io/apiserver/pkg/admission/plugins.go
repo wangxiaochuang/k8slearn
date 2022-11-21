@@ -160,6 +160,7 @@ func (ps *Plugins) NewFromPlugins(pluginNames []string, configProvider ConfigPro
 	if len(validationPlugins) != 0 {
 		klog.Infof("Loaded %d validating admission controller(s) successfully in the following order: %s.", len(validationPlugins), strings.Join(validationPlugins, ","))
 	}
+	// 所有插件都连成一个链，执行的时候依次执行
 	return newReinvocationHandler(chainAdmissionHandler(handlers)), nil
 }
 
@@ -178,6 +179,7 @@ func (ps *Plugins) InitPlugin(name string, config io.Reader, pluginInitializer P
 		return nil, fmt.Errorf("unknown admission plugin: %s", name)
 	}
 
+	// 对每一个插件都执行初始化动作，初始化动作由多个函数组成，通过参数传递进来的
 	pluginInitializer.Initialize(plugin)
 	// ensure that plugins have been properly initialized
 	if err := ValidateInitialization(plugin); err != nil {

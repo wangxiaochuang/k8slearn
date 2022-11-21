@@ -63,6 +63,7 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy audit.PolicyRuleEva
 		omitStages := auditContext.RequestAuditConfig.OmitStages
 
 		ev.Stage = auditinternal.StageRequestReceived
+		// 处理审计日志
 		if processed := processAuditEvent(ctx, sink, ev, omitStages); !processed {
 			audit.ApiserverAuditDroppedCounter.WithContext(ctx).Inc()
 			responsewriters.InternalError(w, req, errors.New("failed to store audit event"))
@@ -125,6 +126,7 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy audit.PolicyRuleEva
 func evaluatePolicyAndCreateAuditEvent(req *http.Request, policy audit.PolicyRuleEvaluator) (*audit.AuditContext, error) {
 	ctx := req.Context()
 
+	// 就是将requestInfo与user信息组合到这里了而已
 	attribs, err := GetAuthorizerAttributes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to GetAuthorizerAttributes: %v", err)
@@ -132,6 +134,7 @@ func evaluatePolicyAndCreateAuditEvent(req *http.Request, policy audit.PolicyRul
 
 	ls := policy.EvaluatePolicyRule(attribs)
 	audit.ObservePolicyLevel(ctx, ls.Level)
+	// 只有满足audit规则才会往后记录审计日志
 	if ls.Level == auditinternal.LevelNone {
 		// Don't audit.
 		return &audit.AuditContext{

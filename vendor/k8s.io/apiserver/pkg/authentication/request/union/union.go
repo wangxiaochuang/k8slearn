@@ -55,10 +55,10 @@ func (authHandler *unionAuthRequestHandler) AuthenticateRequest(req *http.Reques
 	for _, currAuthRequestHandler := range authHandler.Handlers {
 		resp, ok, err := currAuthRequestHandler.AuthenticateRequest(req)
 		if err != nil {
-			// 遇到第一个失败了，就直接失败了
 			if authHandler.FailOnError {
 				return resp, ok, err
 			}
+			// 第一个失败后，继续尝试后面的其他认证
 			errlist = append(errlist, err)
 			continue
 		}

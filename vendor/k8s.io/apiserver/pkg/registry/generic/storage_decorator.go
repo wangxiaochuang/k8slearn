@@ -53,6 +53,7 @@ func UndecoratedStorage(
 // NewRawStorage creates the low level kv storage. This is a work-around for current
 // two layer of same storage interface.
 // TODO: Once cacher is enabled on all registries (event registry is special), we will remove this method.
+// 最终没调用这里生成etcd客户端
 func NewRawStorage(config *storagebackend.ConfigForResource, newFunc func() runtime.Object) (storage.Interface, factory.DestroyFunc, error) {
 	return factory.Create(*config, newFunc)
 }

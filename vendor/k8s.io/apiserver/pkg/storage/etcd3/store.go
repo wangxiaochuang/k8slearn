@@ -46,6 +46,7 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	utiltrace "k8s.io/utils/trace"
+	"k8s.io/utils/wxc"
 )
 
 const (
@@ -124,6 +125,9 @@ func (s *store) Versioner() storage.Versioner {
 
 // Get implements storage.Interface.Get.
 func (s *store) Get(ctx context.Context, key string, opts storage.GetOptions, out runtime.Object) error {
+	if key == "/namespaces/default" {
+		wxc.Print("store.Storage.Storage get " + key)
+	}
 	key = path.Join(s.pathPrefix, key)
 	startTime := time.Now()
 	getResp, err := s.client.KV.Get(ctx, key)

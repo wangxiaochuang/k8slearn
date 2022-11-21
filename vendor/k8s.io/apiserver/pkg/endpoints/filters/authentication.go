@@ -53,6 +53,7 @@ func withAuthentication(handler http.Handler, auth authenticator.Request, failed
 		if len(apiAuds) > 0 {
 			req = req.WithContext(authenticator.WithAudiences(req.Context(), apiAuds))
 		}
+		// wxc.CondPrint(req, auth)
 		resp, ok, err := auth.AuthenticateRequest(req)
 		authenticationFinish := time.Now()
 		defer func() {
@@ -67,6 +68,7 @@ func withAuthentication(handler http.Handler, auth authenticator.Request, failed
 			return
 		}
 
+		// https://kubernetes.default.svc
 		if !audiencesAreAcceptable(apiAuds, resp.Audiences) {
 			err = fmt.Errorf("unable to match the audience: %v , accepted: %v", resp.Audiences, apiAuds)
 			klog.Error(err)
@@ -77,6 +79,7 @@ func withAuthentication(handler http.Handler, auth authenticator.Request, failed
 		// authorization header is not required anymore in case of a successful authentication.
 		req.Header.Del("Authorization")
 
+		// 将用户设置到ctx
 		req = req.WithContext(genericapirequest.WithUser(req.Context(), resp.User))
 		handler.ServeHTTP(w, req)
 	})

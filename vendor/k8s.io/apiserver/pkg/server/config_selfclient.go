@@ -49,6 +49,7 @@ func (s *SecureServingInfo) NewClientConfig(caCert []byte) (*restclient.Config, 
 }
 
 func (s *SecureServingInfo) NewLoopbackClientConfig(token string, loopbackCert []byte) (*restclient.Config, error) {
+	fmt.Printf("##### generate token: %s\n", token)
 	c, err := s.NewClientConfig(loopbackCert)
 	if err != nil || c == nil {
 		return c, err

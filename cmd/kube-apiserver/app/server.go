@@ -113,8 +113,7 @@ cluster's shared state through which all other components interact.`,
 
 			// DefaultFeatureGate 是个包级别变量，不能通过这个变量更改
 			// 搜索"DefaultMutableFeatureGate.Add("可以知道都注册了哪些特性开关
-			// Activate logging as soon as possible, after that
-			// show flags with the final logging configuration.
+			// logs.AddFeatureGates( 注册日志的FeatureGate
 			if err := s.Logs.ValidateAndApply(utilfeature.DefaultFeatureGate); err != nil {
 				return err
 			}
@@ -138,7 +137,6 @@ cluster's shared state through which all other components interact.`,
 				if len(arg) > 0 {
 					return fmt.Errorf("%q does not take any arguments, got %q", cmd.CommandPath(), args)
 				}
-				wxc.P("prepare to run")
 			}
 			return nil
 		},
@@ -166,6 +164,7 @@ func Run(completeOptions completedServerRunOptions, stopCh <-chan struct{}) erro
 
 	klog.InfoS("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
+	wxc.Print("begin create server chain")
 	server, err := CreateServerChain(completeOptions, stopCh)
 	if err != nil {
 		return err
@@ -181,6 +180,8 @@ func Run(completeOptions completedServerRunOptions, stopCh <-chan struct{}) erro
 
 // CreateServerChain creates the apiservers connected via delegation.
 func CreateServerChain(completedOptions completedServerRunOptions, stopCh <-chan struct{}) (*aggregatorapiserver.APIAggregator, error) {
+	// GenericConfig只在这里创建一次，后面都会复用，这就是公共的配置
+	// RESTOptionsGetter
 	kubeAPIServerConfig, serviceResolver, pluginInitializer, err := CreateKubeAPIServerConfig(completedOptions)
 	if err != nil {
 		return nil, err
@@ -206,7 +207,6 @@ func CreateServerChain(completedOptions completedServerRunOptions, stopCh <-chan
 		return nil, err
 	}
 
-	wxc.P("\nCreateKubeAPIServer done")
 	// aggregator comes last in the chain
 	aggregatorConfig, err := createAggregatorConfig(*kubeAPIServerConfig.GenericConfig, completedOptions.ServerRunOptions, kubeAPIServerConfig.ExtraConfig.VersionedInformers, serviceResolver, kubeAPIServerConfig.ExtraConfig.ProxyTransport, pluginInitializer)
 	if err != nil {
@@ -255,6 +255,7 @@ func CreateKubeAPIServerConfig(s completedServerRunOptions) (
 	proxyTransport := CreateProxyTransport()
 
 	// 包含admission的处理
+	// RESTOptionsGetter
 	genericConfig, versionedInformers, serviceResolver, pluginInitializers, admissionPostStartHook, storageFactory, err := buildGenericConfig(s.ServerRunOptions, proxyTransport)
 	if err != nil {
 		return nil, nil, nil, err
@@ -381,6 +382,7 @@ func buildGenericConfig(
 		return
 	}
 
+	// loopbackClientConfig 生产内部调用的token
 	if lastErr = s.SecureServing.ApplyTo(&genericConfig.SecureServing, &genericConfig.LoopbackClientConfig); lastErr != nil {
 		return
 	}
@@ -436,6 +438,7 @@ func buildGenericConfig(
 	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIServerTracing) && genericConfig.TracerProvider != nil {
 		storageFactory.StorageConfig.Transport.TracerProvider = genericConfig.TracerProvider
 	}
+	// RESTOptionsGetter
 	if lastErr = s.Etcd.ApplyWithStorageFactoryTo(storageFactory, genericConfig); lastErr != nil {
 		return
 	}

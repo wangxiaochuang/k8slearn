@@ -543,6 +543,7 @@ func (m *Instance) InstallLegacyAPI(c *completedConfig, restOptionsGetter generi
 	}
 	// 这里既负责和ETCD进行数据交换，也负责提供restfull api的响应
 	// 返回的apiGroupInfo包含了核心对象的信息
+	// VersionedResourcesStorageMap["v1"] = storage  storage存放了不同资源及子资源的store
 	legacyRESTStorage, apiGroupInfo, err := legacyRESTStorageProvider.NewLegacyRESTStorage(c.ExtraConfig.APIResourceConfigSource, restOptionsGetter)
 	if err != nil {
 		return fmt.Errorf("error building core storage: %v", err)

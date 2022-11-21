@@ -554,6 +554,7 @@ func (c *Config) Complete(informers informers.SharedInformerFactory) CompletedCo
 		c.DiscoveryAddresses = discovery.DefaultAddresses{DefaultAddress: c.ExternalAddress}
 	}
 
+	// 设置loopback的bearerToken
 	AuthorizeClientBearerToken(c.LoopbackClientConfig, &c.Authentication, &c.Authorization)
 
 	if c.RequestInfoResolver == nil {
@@ -587,6 +588,7 @@ func (c *RecommendedConfig) Complete() CompletedConfig {
 // New creates a new server which logically combines the handling chain with the passed server.
 // name is used to differentiate for logging. The handler chain in particular can be difficult as it starts delegating.
 // delegationTarget may not be nil.
+// 这个函数会执行三次，aggregator、apiserver、apiextension
 func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*GenericAPIServer, error) {
 	if c.Serializer == nil {
 		return nil, fmt.Errorf("Genericapiserver.New() called with config.Serializer == nil")
@@ -823,6 +825,7 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 
 	failedHandler = filterlatency.TrackCompleted(failedHandler)
 	handler = filterlatency.TrackCompleted(handler)
+	// 认证成功与认证失败的handler都设置了
 	handler = genericapifilters.WithAuthentication(handler, c.Authentication.Authenticator, failedHandler, c.Authentication.APIAudiences)
 	handler = filterlatency.TrackStarted(handler, "authentication")
 
@@ -841,6 +844,7 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 	}
 	handler = genericapifilters.WithAuditAnnotations(handler, c.AuditBackend, c.AuditPolicyRuleEvaluator)
 	handler = genericapifilters.WithWarningRecorder(handler)
+	// 告诉客户的不要缓存
 	handler = genericapifilters.WithCacheControl(handler)
 	// 就设置 Strict-Transport-Security 响应头
 	handler = genericfilters.WithHSTS(handler, c.HSTSDirectives)
@@ -855,9 +859,13 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 	}
 	handler = genericapifilters.WithLatencyTrackers(handler)
 	handler = genericapifilters.WithRequestInfo(handler, c.RequestInfoResolver)
+	// 接受到请求的时间戳设置到r.ctx
 	handler = genericapifilters.WithRequestReceivedTimestamp(handler)
+	// 如果muxAndDiscoveryCompleteSignal还没完成，将这个信息设置到r.ctx
 	handler = genericapifilters.WithMuxAndDiscoveryComplete(handler, c.lifecycleSignals.MuxAndDiscoveryComplete.Signaled())
+	// 处理panic
 	handler = genericfilters.WithPanicRecovery(handler, c.RequestInfoResolver)
+	// 设置audit-id
 	handler = genericapifilters.WithAuditID(handler)
 	return handler
 }
@@ -949,6 +957,7 @@ func AuthorizeClientBearerToken(loopback *restclient.Config, authn *Authenticati
 	}
 
 	tokenAuthenticator := authenticatorfactory.NewFromTokens(tokens, authn.APIAudiences)
+	// 将loopback的token认证放到认证的前面，会先走本地loopback的token认证
 	authn.Authenticator = authenticatorunion.New(tokenAuthenticator, authn.Authenticator)
 
 	tokenAuthorizer := authorizerfactory.NewPrivilegedGroups(user.SystemPrivilegedGroup)

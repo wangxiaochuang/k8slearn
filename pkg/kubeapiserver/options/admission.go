@@ -43,19 +43,20 @@ type AdmissionOptions struct {
 
 // NewAdmissionOptions creates a new instance of AdmissionOptions
 // Note:
-//  In addition it calls RegisterAllAdmissionPlugins to register
-//  all kube-apiserver admission plugins.
 //
-//  Provides the list of RecommendedPluginOrder that holds sane values
-//  that can be used by servers that don't care about admission chain.
-//  Servers that do care can overwrite/append that field after creation.
+//	In addition it calls RegisterAllAdmissionPlugins to register
+//	all kube-apiserver admission plugins.
+//
+//	Provides the list of RecommendedPluginOrder that holds sane values
+//	that can be used by servers that don't care about admission chain.
+//	Servers that do care can overwrite/append that field after creation.
 func NewAdmissionOptions() *AdmissionOptions {
 	options := genericoptions.NewAdmissionOptions()
-	// register all admission plugins
+	// 将所有的admission都注册进来
 	RegisterAllAdmissionPlugins(options.Plugins)
-	// set RecommendedPluginOrder
+	// 所有推荐的admission插件的名字列表
 	options.RecommendedPluginOrder = AllOrderedPlugins
-	// set DefaultOffPlugins
+	// 所有插件排除允许的插件，就是默认不允许的
 	options.DefaultOffPlugins = DefaultOffAdmissionPlugins()
 
 	return &AdmissionOptions{

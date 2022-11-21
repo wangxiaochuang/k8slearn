@@ -584,6 +584,7 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 
 		apiGroupVersion.MaxRequestBodyBytes = s.maxRequestBodyBytes
 
+		// 整个apiGroup都会放到一个service里并添加到container
 		r, err := apiGroupVersion.InstallREST(s.Handler.GoRestfulContainer)
 		if err != nil {
 			return fmt.Errorf("unable to setup API %v: %v", apiGroupInfo, err)
@@ -709,7 +710,8 @@ func (s *GenericAPIServer) newAPIGroupVersion(apiGroupInfo *APIGroupInfo, groupV
 		UnsafeConvertor:       runtime.UnsafeObjectConvertor(apiGroupInfo.Scheme),
 		Defaulter:             apiGroupInfo.Scheme,
 		Typer:                 apiGroupInfo.Scheme,
-		Namer:                 runtime.Namer(meta.NewAccessor()),
+		// 获取namespace和name
+		Namer: runtime.Namer(meta.NewAccessor()),
 
 		EquivalentResourceRegistry: s.EquivalentResourceRegistry,
 

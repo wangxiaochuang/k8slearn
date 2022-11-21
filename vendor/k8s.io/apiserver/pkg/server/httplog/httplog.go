@@ -126,7 +126,7 @@ func withLogging(handler http.Handler, stackTracePred StacktracePred, shouldLogR
 		req = req.WithContext(context.WithValue(ctx, respLoggerContextKey, rl))
 		defer rl.Log()
 
-		// 就是用来记录日志，这里讲responseWriter包装了下，调用输出的时候会先记录日志
+		// 就是用来记录日志，这里将responseWriter包装了下，调用输出的时候会先记录日志
 		w = responsewriter.WrapForHTTP1Or2(rl)
 		handler.ServeHTTP(w, req)
 	})

@@ -113,6 +113,7 @@ func (t *timeoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}()
 		t.handler.ServeHTTP(w, rCopy)
 	}()
+	// 等待结果或超时
 	select {
 	case err := <-resultCh:
 		// panic if error occurs; stop otherwise

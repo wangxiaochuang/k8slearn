@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/storage"
+	"k8s.io/utils/wxc"
 )
 
 type DryRunnableStorage struct {
@@ -61,6 +62,9 @@ func (s *DryRunnableStorage) Watch(ctx context.Context, key string, opts storage
 }
 
 func (s *DryRunnableStorage) Get(ctx context.Context, key string, opts storage.GetOptions, objPtr runtime.Object) error {
+	if key == "default" {
+		wxc.Print("store.Storage get " + key)
+	}
 	return s.Storage.Get(ctx, key, opts, objPtr)
 }
 

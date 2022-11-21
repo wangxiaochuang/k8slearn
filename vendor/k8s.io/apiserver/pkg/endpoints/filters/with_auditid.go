@@ -17,7 +17,10 @@ limitations under the License.
 package filters
 
 import (
+	"fmt"
 	"net/http"
+
+	"k8s.io/utils/wxc"
 
 	"k8s.io/apimachinery/pkg/types"
 	auditinternal "k8s.io/apiserver/pkg/apis/audit"
@@ -49,9 +52,10 @@ func withAuditID(handler http.Handler, newAuditIDFunc func() string) http.Handle
 		if len(auditID) == 0 {
 			auditID = newAuditIDFunc()
 		}
+		wxc.CondPrint(r, fmt.Sprintf("debug: audit-id=%s\n", auditID))
 
 		// Note: we save the user specified value of the Audit-ID header as is, no truncation is performed.
-		// 设置到请求的上下文里
+		// new了一个Request，复制原始Request，设置新的ctx
 		r = r.WithContext(request.WithAuditID(ctx, types.UID(auditID)))
 
 		// We echo the Audit-ID in to the response header.
@@ -61,7 +65,7 @@ func withAuditID(handler http.Handler, newAuditIDFunc func() string) http.Handle
 		//
 		// This filter will also be used by other aggregated api server(s). For an aggregated API
 		// we don't want to see the same audit ID appearing more than once.
-		// 将AuditID也返回去
+		// 将AuditID通过响应头返回去
 		if value := w.Header().Get(auditinternal.HeaderAuditID); len(value) == 0 {
 			w.Header().Set(auditinternal.HeaderAuditID, auditID)
 		}

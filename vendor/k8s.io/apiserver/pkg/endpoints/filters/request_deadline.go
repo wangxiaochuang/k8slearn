@@ -61,6 +61,7 @@ func withRequestDeadline(handler http.Handler, sink audit.Sink, policy audit.Pol
 			handleError(w, req, http.StatusInternalServerError, fmt.Errorf("no RequestInfo found in context, handler chain must be wrong"))
 			return
 		}
+		// 长时间运行的请求没有超时时间
 		if longRunning(req, requestInfo) {
 			handler.ServeHTTP(w, req)
 			return
@@ -93,6 +94,7 @@ func withRequestDeadline(handler http.Handler, sink audit.Sink, policy audit.Pol
 			started = requestStartedTimestamp
 		}
 
+		// 设置好超时的ctx
 		ctx, cancel := context.WithDeadline(ctx, started.Add(timeout))
 		defer cancel()
 

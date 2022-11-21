@@ -535,8 +535,11 @@ func (o *AuditLogOptions) ensureLogFile() error {
 
 func (o *AuditLogOptions) newBackend(w io.Writer) audit.Backend {
 	groupVersion, _ := schema.ParseGroupVersion(o.GroupVersionString)
+	// 指定审计日志格式
 	log := pluginlog.NewBackend(w, o.Format, groupVersion)
+	// 批量写入，提升性能
 	log = o.BatchOptions.wrapBackend(log)
+	// 过长就截断
 	log = o.TruncateOptions.wrapBackend(log, groupVersion)
 	return log
 }

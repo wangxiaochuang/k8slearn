@@ -83,6 +83,7 @@ func WithRetryAfter(handler http.Handler, shutdownDelayDurationElapsedCh <-chan 
 func withRetryAfter(handler http.Handler, isRequestExemptFn isRequestExemptFunc, shouldRespondWithRetryAfterFn shouldRespondWithRetryAfterFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		params, send := shouldRespondWithRetryAfterFn()
+		// 没有正在关闭或是指定的条件的请求
 		if !send || isRequestExemptFn(req) {
 			handler.ServeHTTP(w, req)
 			return

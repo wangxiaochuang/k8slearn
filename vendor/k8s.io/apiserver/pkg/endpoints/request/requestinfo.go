@@ -118,11 +118,13 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 	// start with a non-resource request until proven otherwise
 	requestInfo := RequestInfo{
 		IsResourceRequest: false,
-		Path:              req.URL.Path,
-		Verb:              strings.ToLower(req.Method),
+		// /api/v1/node
+		Path: req.URL.Path,
+		Verb: strings.ToLower(req.Method),
 	}
 
 	currentParts := splitPath(req.URL.Path)
+	// api/v1/node
 	if len(currentParts) < 3 {
 		// return a non-resource request
 		return &requestInfo, nil
@@ -135,6 +137,7 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 	requestInfo.APIPrefix = currentParts[0]
 	currentParts = currentParts[1:]
 
+	// api
 	if !r.GrouplessAPIPrefixes.Has(requestInfo.APIPrefix) {
 		// one part (APIPrefix) has already been consumed, so this is actually "do we have four parts?"
 		if len(currentParts) < 3 {
@@ -147,10 +150,13 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 	}
 
 	requestInfo.IsResourceRequest = true
+	// v1/node
 	requestInfo.APIVersion = currentParts[0]
+	// node
 	currentParts = currentParts[1:]
 
 	// handle input of form /{specialVerb}/*
+	// proxy watch
 	if specialVerbs.Has(currentParts[0]) {
 		if len(currentParts) < 2 {
 			return &requestInfo, fmt.Errorf("unable to determine kind and namespace from url, %v", req.URL)

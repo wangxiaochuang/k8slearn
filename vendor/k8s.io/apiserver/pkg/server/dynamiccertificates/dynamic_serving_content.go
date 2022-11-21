@@ -112,6 +112,7 @@ func (c *DynamicCertKeyPairContent) loadCertKeyPair() error {
 	c.certKeyPair.Store(newCertKey)
 	klog.V(2).InfoS("Loaded a new cert/key pair", "name", c.Name())
 
+	// 证书有变化，通知注册进来的函数
 	for _, listener := range c.listeners {
 		listener.Enqueue()
 	}

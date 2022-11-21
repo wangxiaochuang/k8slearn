@@ -46,6 +46,7 @@ import (
 	"k8s.io/apiserver/pkg/util/dryrun"
 	flowcontrolrequest "k8s.io/apiserver/pkg/util/flowcontrol/request"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/wxc"
 	"sigs.k8s.io/structured-merge-diff/v4/fieldpath"
 
 	"k8s.io/klog/v2"
@@ -716,6 +717,9 @@ func (e *Store) Get(ctx context.Context, name string, options *metav1.GetOptions
 	if err != nil {
 		return nil, err
 	}
+	if name == "default" {
+		wxc.Print("store get " + key)
+	}
 	if err := e.Storage.Get(ctx, key, storage.GetOptions{ResourceVersion: options.ResourceVersion}, obj); err != nil {
 		return nil, storeerr.InterpretGetError(err, e.qualifiedResourceFromContext(ctx), name)
 	}
@@ -900,13 +904,13 @@ func markAsDeleting(obj runtime.Object, now time.Time) (err error) {
 // grace period seconds (graceful deletion) and updating the list of
 // finalizers (finalization); it returns:
 //
-// 1. an error
-// 2. a boolean indicating that the object was not found, but it should be
-//    ignored
-// 3. a boolean indicating that the object's grace period is exhausted and it
-//    should be deleted immediately
-// 4. a new output object with the state that was updated
-// 5. a copy of the last existing state of the object
+//  1. an error
+//  2. a boolean indicating that the object was not found, but it should be
+//     ignored
+//  3. a boolean indicating that the object's grace period is exhausted and it
+//     should be deleted immediately
+//  4. a new output object with the state that was updated
+//  5. a copy of the last existing state of the object
 func (e *Store) updateForGracefulDeletionAndFinalizers(ctx context.Context, name, key string, options *metav1.DeleteOptions, preconditions storage.Preconditions, deleteValidation rest.ValidateObjectFunc, in runtime.Object) (err error, ignoreNotFound, deleteImmediately bool, out, lastExisting runtime.Object) {
 	lastGraceful := int64(0)
 	var pendingFinalizers bool

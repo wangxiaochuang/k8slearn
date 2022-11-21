@@ -253,6 +253,7 @@ func (s *SecureServingOptions) ApplyTo(config **server.SecureServingInfo) error 
 		s.BindAddress = s.Listener.Addr().(*net.TCPAddr).IP
 	}
 
+	// 这里回写回去了
 	*config = &server.SecureServingInfo{
 		Listener:                     s.Listener,
 		HTTP2MaxStreamsPerConnection: s.HTTP2MaxStreamsPerConnection,
